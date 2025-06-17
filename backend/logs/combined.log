@@ -1,0 +1,16 @@
+{
+  service: 'superfarm-api',
+  environment: 'development',
+  logLevel: 'info',
+  logDir: 'D:\\GitHub\\SuperFarm\\backend\\logs',
+  level: 'info',
+  message: '日志系统初始化完成',
+  timestamp: '2025-06-17 17:59:30'
+}
+{
+  message: 'DEEPSEEK_API_KEY 环境变量未设置，将使用备用AI策略',
+  level: 'warn',
+  service: 'superfarm-api',
+  environment: 'development',
+  timestamp: '2025-06-17 17:59:30'
+}

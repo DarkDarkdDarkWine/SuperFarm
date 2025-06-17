@@ -1,0 +1,2 @@
+
+{"timestamp":"2025-06-17 17:59:30","level":"warn","message":"DEEPSEEK_API_KEY 环境变量未设置，将使用备用AI策略","service":"superfarm-api","environment":"development"}

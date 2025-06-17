@@ -6,73 +6,100 @@ class DeepSeekService {
     this.apiKey = process.env.DEEPSEEK_API_KEY;
     this.baseURL = 'https://api.deepseek.com/v1/chat/completions';
     this.model = 'deepseek-chat';
+    this.maxRetries = 3;
+    this.retryDelay = 1000; // 1秒
     
     if (!this.apiKey) {
-      throw new Error('DEEPSEEK_API_KEY 环境变量未设置');
+      logger.warn('DEEPSEEK_API_KEY 环境变量未设置，将使用备用AI策略');
     }
   }
 
   /**
    * 获取AI决策
    * @param {Object} gameState 游戏状态
+   * @param {Object} aiPlayer AI玩家信息
+   * @param {Object} humanPlayer 人类玩家信息
    * @param {string} difficulty 难度等级
    * @returns {Promise<Object>} AI决策
    */
-  async getAIDecision(gameState, difficulty = 'medium') {
-    const prompt = this.buildPrompt(gameState, difficulty);
-    
-    try {
-      logger.info(`开始调用DeepSeek API - 游戏ID: ${gameState.gameId}, 难度: ${difficulty}`);
-      
-      const response = await axios.post(this.baseURL, {
-        model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: this.getSystemPrompt(difficulty)
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: this.getTemperature(difficulty),
-        max_tokens: 1000
-      }, {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000 // 30秒超时
-      });
+  async getAIDecision(gameState, aiPlayer, humanPlayer, difficulty = 'medium') {
+    // 如果没有API密钥，直接返回备用策略
+    if (!this.apiKey) {
+      logger.info('使用备用AI策略（无API密钥）');
+      return this.getFallbackDecision(aiPlayer, humanPlayer);
+    }
 
-      const aiResponse = response.data.choices[0].message.content;
-      const decision = this.parseAIResponse(aiResponse);
-      
-      logger.info(`DeepSeek API调用成功 - 游戏ID: ${gameState.gameId}`);
-      return decision;
-      
-    } catch (error) {
-      logger.error('DeepSeek API调用失败:', {
-        error: error.message,
-        gameId: gameState.gameId,
-        difficulty,
-        status: error.response?.status,
-        statusText: error.response?.statusText
-      });
-      
-      throw new Error('AI服务暂时不可用，请稍后重试');
+    const prompt = this.buildPrompt(gameState, aiPlayer, humanPlayer, difficulty);
+    
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        logger.info(`开始调用DeepSeek API - 游戏ID: ${gameState.gameId}, 难度: ${difficulty}, 尝试: ${attempt}`);
+        
+        const response = await axios.post(this.baseURL, {
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content: this.getSystemPrompt(difficulty)
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: this.getTemperature(difficulty),
+          max_tokens: 1500,
+          stream: false
+        }, {
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000 // 30秒超时
+        });
+
+        const aiResponse = response.data.choices[0].message.content;
+        const decision = this.parseAIResponse(aiResponse);
+        
+        // 验证决策合法性
+        if (!this.validateDecision(decision, aiPlayer)) {
+          throw new Error('AI返回了不合法的决策');
+        }
+        
+        logger.info(`DeepSeek API调用成功 - 游戏ID: ${gameState.gameId}, 尝试: ${attempt}`);
+        return decision;
+        
+      } catch (error) {
+        logger.error(`DeepSeek API调用失败 - 尝试 ${attempt}:`, {
+          error: error.message,
+          gameId: gameState.gameId,
+          difficulty,
+          status: error.response?.status,
+          statusText: error.response?.statusText
+        });
+        
+        // 如果是最后一次尝试，返回备用策略
+        if (attempt === this.maxRetries) {
+          logger.warn('所有API调用尝试失败，使用备用AI策略');
+          return this.getFallbackDecision(aiPlayer, humanPlayer);
+        }
+        
+        // 等待后重试
+        await new Promise(resolve => setTimeout(resolve, this.retryDelay * attempt));
+      }
     }
   }
 
   /**
    * 构建AI提示词
    * @param {Object} gameState 游戏状态
+   * @param {Object} aiPlayer AI玩家信息
+   * @param {Object} humanPlayer 人类玩家信息
    * @param {string} difficulty 难度等级
    * @returns {string} 提示词
    */
-  buildPrompt(gameState, difficulty) {
-    const { players, bank, diceResult, currentRound } = gameState;
+  buildPrompt(gameState, aiPlayer, humanPlayer, difficulty) {
+    const { bank, diceResult, currentRound } = gameState;
     
     return `你是超级农场主游戏的AI玩家，请分析当前局面并制定策略。
 
@@ -81,12 +108,14 @@ class DeepSeekService {
 **骰子结果**: ${JSON.stringify(diceResult)}
 
 **人类玩家状态**:
-- 动物: ${JSON.stringify(players.human.animals)}
-- 防护: ${JSON.stringify(players.human.protection)}
+- 动物: ${JSON.stringify(humanPlayer.animals)}
+- 防护: ${JSON.stringify(humanPlayer.protection)}
+- 胜利进度: ${this.getWinProgress(humanPlayer)}/5
 
 **AI玩家状态 (你)**:
-- 动物: ${JSON.stringify(players.ai.animals)}
-- 防护: ${JSON.stringify(players.ai.protection)}
+- 动物: ${JSON.stringify(aiPlayer.animals)}
+- 防护: ${JSON.stringify(aiPlayer.protection)}
+- 胜利进度: ${this.getWinProgress(aiPlayer)}/5
 
 **银行剩余**: ${JSON.stringify(bank)}
 
@@ -308,6 +337,122 @@ ${this.getDifficultyStrategy(difficulty)}
              bank.bigDog > 0;
     }
     return false;
+  }
+
+  /**
+   * 备用AI决策（本地简单规则AI）
+   * @param {Object} aiPlayer AI玩家信息
+   * @param {Object} humanPlayer 人类玩家信息
+   * @returns {Object} AI决策
+   */
+  getFallbackDecision(aiPlayer, humanPlayer) {
+    const actions = [];
+    let analysis = '使用本地备用AI策略。';
+    let reasoning = '';
+
+    // 优先级1：检查胜利条件
+    const aiWinProgress = this.getWinProgress(aiPlayer);
+    const humanWinProgress = this.getWinProgress(humanPlayer);
+    
+    if (aiWinProgress >= 4) {
+      analysis = '即将胜利！优先完成最后的动物收集。';
+    } else if (humanWinProgress >= 4) {
+      analysis = '人类玩家即将胜利，需要加快节奏！';
+    }
+
+    // 优先级2：购买防护（如果缺少防护且有威胁）
+    if (aiPlayer.animals.sheep >= 1 && aiPlayer.protection.smallDog === 0) {
+      actions.push({
+        type: 'buy_protection',
+        protection: 'smallDog'
+      });
+      reasoning += '购买小狗防护以对抗狐狸攻击。';
+    }
+
+    if (aiPlayer.animals.pig >= 1 && aiPlayer.protection.bigDog === 0) {
+      actions.push({
+        type: 'buy_protection',
+        protection: 'bigDog'
+      });
+      reasoning += '购买大狗防护以对抗狼攻击。';
+    }
+
+    // 优先级3：动物交换（向上交换）
+    if (aiPlayer.animals.cow >= 2) {
+      actions.push({
+        type: 'exchange',
+        exchange: {
+          from: 'cow',
+          to: 'horse',
+          fromCount: 2,
+          toCount: 1
+        }
+      });
+      reasoning += '将2只牛交换为1只马，距离胜利更近。';
+    } else if (aiPlayer.animals.pig >= 3) {
+      actions.push({
+        type: 'exchange',
+        exchange: {
+          from: 'pig',
+          to: 'cow',
+          fromCount: 3,
+          toCount: 1
+        }
+      });
+      reasoning += '将3只猪交换为1只牛。';
+    } else if (aiPlayer.animals.sheep >= 2) {
+      actions.push({
+        type: 'exchange',
+        exchange: {
+          from: 'sheep',
+          to: 'pig',
+          fromCount: 2,
+          toCount: 1
+        }
+      });
+      reasoning += '将2只羊交换为1只猪。';
+    } else if (aiPlayer.animals.rabbit >= 6) {
+      actions.push({
+        type: 'exchange',
+        exchange: {
+          from: 'rabbit',
+          to: 'sheep',
+          fromCount: 6,
+          toCount: 1
+        }
+      });
+      reasoning += '将6只兔子交换为1只羊。';
+    }
+
+    // 如果没有任何行动，返回等待策略
+    if (actions.length === 0) {
+      reasoning = '当前资源不足以进行有效操作，等待下次投掷骰子。';
+    }
+
+    return {
+      analysis: `${analysis} AI胜利进度: ${aiWinProgress}/5, 人类胜利进度: ${humanWinProgress}/5`,
+      actions,
+      reasoning: reasoning || '维持现状，等待更好的机会。',
+      confidence: 0.7
+    };
+  }
+
+  /**
+   * 计算玩家胜利进度
+   * @param {Object} player 玩家信息
+   * @returns {number} 胜利进度（0-5）
+   */
+  getWinProgress(player) {
+    let progress = 0;
+    const animals = ['rabbit', 'sheep', 'pig', 'cow', 'horse'];
+    
+    animals.forEach(animal => {
+      if (player.animals[animal] >= 1) {
+        progress++;
+      }
+    });
+    
+    return progress;
   }
 }
 
