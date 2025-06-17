@@ -37,6 +37,35 @@ export const useGameStore = defineStore('game', {
       return phaseTexts[state.gamePhase]
     },
     
+    // 获取当前玩家信息 (为UI组件提供)
+    currentPlayer: (state) => {
+      return state.currentPlayer === 'human' 
+        ? { type: 'human', name: '玩家' }
+        : { type: 'ai', name: 'AI农场主' }
+    },
+    
+    // 骰子结果
+    diceResults: (state) => state.diceResult,
+    
+    // 是否正在掷骰子
+    isRolling: (state) => state.gamePhase === 'rolling',
+    
+    // 游戏状态信息
+    gameState: (state) => ({
+      status: state.gamePhase,
+      winnerId: state.winner,
+      bank: state.bank,
+      gameHistory: state.gameHistory
+    }),
+    
+    // 回合数
+    turn: (state) => state.currentRound,
+    
+    // 游戏进度 (简单实现)
+    gameProgress: (state) => {
+      return Math.min(state.currentRound / 20, 1) // 假设20轮为满进度
+    },
+    
     // 获取最后一次骰子结果的统计
     lastDiceStats: (state) => {
       const stats = {
@@ -167,6 +196,21 @@ export const useGameStore = defineStore('game', {
         gameId: this.gameId,
         duration: Date.now() - (this.gameHistory[0]?.timestamp || Date.now())
       }
+    },
+
+    // 设置游戏状态 (为UI组件提供)
+    setGameStatus(status: GamePhase) {
+      this.gamePhase = status
+    },
+
+    // 获取人类玩家 (为UI组件提供)
+    get humanPlayer() {
+      return this.currentPlayer === 'human' ? { type: 'human' as const, name: '玩家' } : null
+    },
+
+    // 获取AI玩家 (为UI组件提供)
+    get aiPlayers() {
+      return [{ type: 'ai' as const, name: 'AI农场主' }]
     }
   }
 }) 

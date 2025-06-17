@@ -6,7 +6,8 @@
     </header>
     
     <main class="app-main">
-      <div class="game-container">
+      <!-- 欢迎界面 -->
+      <div v-if="!gameStarted" class="game-container">
         <div class="welcome-card">
           <h2>欢迎来到超级农场主</h2>
           <p>这是一个策略性的农场管理游戏</p>
@@ -20,6 +21,9 @@
           </div>
         </div>
       </div>
+
+      <!-- 游戏界面 -->
+      <GameBoard v-if="gameStarted" @back-to-menu="backToMenu" />
     </main>
     
     <footer class="app-footer">
@@ -29,16 +33,24 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { usePlayerStore } from '@/stores/playerStore'
+import GameBoard from './components/GameBoard.vue'
 
 const gameStore = useGameStore()
 const playerStore = usePlayerStore()
+const gameStarted = ref(false)
 
 const startGame = () => {
   gameStore.initGame()
   playerStore.resetPlayers()
+  gameStarted.value = true
   console.log('游戏开始！')
+}
+
+const backToMenu = () => {
+  gameStarted.value = false
 }
 
 const showRules = () => {
