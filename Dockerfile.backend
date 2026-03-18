@@ -1,0 +1,22 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Install dependencies
+COPY backend/package*.json ./backend/
+RUN cd backend && npm ci
+
+# Copy source and build
+COPY shared/ ./shared/
+COPY backend/ ./backend/
+RUN cd backend && npm run build
+
+# ── Runtime ──────────────────────────────────────────────────────────────────
+FROM node:20-alpine
+WORKDIR /app
+
+COPY --from=builder /app/backend/dist ./dist
+COPY --from=builder /app/backend/node_modules ./node_modules
+COPY --from=builder /app/backend/package.json ./
+
+EXPOSE 3001
+CMD ["node", "dist/backend/src/index.js"]

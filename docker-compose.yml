@@ -1,0 +1,21 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8011:3001"
+    env_file: backend/.env
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL}
+    ports:
+      - "8010:80"
+    restart: unless-stopped
+    depends_on:
+      - backend

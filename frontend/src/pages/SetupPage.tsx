@@ -29,13 +29,15 @@ function StatusDot({ status, label }: { status: PingStatus; label: string }) {
   );
 }
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? '';
+
 function useStatusPing() {
   const [backend, setBackend] = useState<PingStatus>('checking');
   const [ai, setAi] = useState<PingStatus>('checking');
 
   const checkBackend = (silent = false) => {
     if (!silent) setBackend('checking');
-    fetch('/health')
+    fetch(`${BACKEND_URL}/health`)
       .then(r => setBackend(r.ok ? 'ok' : 'err'))
       .catch(() => setBackend('err'));
   };
@@ -44,7 +46,7 @@ function useStatusPing() {
     const key = localStorage.getItem('deepseek_api_key')?.trim();
     if (!key) { setAi('err'); return; }
     if (!silent) setAi('checking');
-    fetch('/api/config/test', {
+    fetch(`${BACKEND_URL}/api/config/test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deepseekApiKey: key }),
@@ -279,7 +281,7 @@ function SettingsModal({ onClose, onKeySaved }: { onClose: () => void; onKeySave
     setTestStatus('testing');
     setTestError('');
     try {
-      const res = await fetch('/api/config/test', {
+      const res = await fetch(`${BACKEND_URL}/api/config/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deepseekApiKey: key }),
@@ -288,7 +290,7 @@ function SettingsModal({ onClose, onKeySaved }: { onClose: () => void; onKeySave
       if (data.success) {
         setTestStatus('ok');
         // 测试通过即保存
-        await fetch('/api/config', {
+        await fetch(`${BACKEND_URL}/api/config`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ deepseekApiKey: key }),

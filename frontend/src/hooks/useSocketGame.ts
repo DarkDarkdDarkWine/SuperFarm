@@ -163,7 +163,8 @@ export function useSocketGame(configs: PlayerConfig[], mode: GameMode) {
     const aiConfigs = configs.filter(c => c.type === 'ai');
 
     // One socket per human player
-    const sockets: TypedSocket[] = humanConfigs.map(() => io() as TypedSocket);
+    const backendUrl = import.meta.env.VITE_BACKEND_URL ?? '';
+    const sockets: TypedSocket[] = humanConfigs.map(() => io(backendUrl) as TypedSocket);
 
     // Game event listeners on primary socket (all sockets receive room broadcasts,
     // but we only need one set of listeners)
