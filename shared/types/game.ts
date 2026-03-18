@@ -176,6 +176,56 @@ export interface ValidationResult {
   reason?: string;
 }
 
+export interface ActionResult {
+  old: number;
+  new: number;
+  change: number;
+}
+
+export type BreedingResults = Partial<Record<AnimalType, ActionResult>>;
+
+export interface FoxAttackResult {
+  type: 'fox';
+  attacker: string;
+  victim: string;
+  blocked: boolean;
+  rabbitsLost: number;
+}
+
+export interface WolfAttackResult {
+  type: 'wolf';
+  attacker: string;
+  victim: string;
+  blocked: boolean;
+  animalsLost: Partial<AnimalCollection>;
+}
+
+export type AttackResult = FoxAttackResult | WolfAttackResult;
+
+export interface AckError {
+  success: false;
+  error: string;
+}
+
+export interface RoomAckSuccess {
+  success: true;
+  room: Room;
+}
+
+export interface GameStartAckSuccess {
+  success: true;
+  gameState: GameState;
+}
+
+export interface ActionAckSuccess {
+  success: true;
+  winner?: string;
+}
+
+export type RoomAck = RoomAckSuccess | AckError;
+export type GameStartAck = GameStartAckSuccess | AckError;
+export type ActionAck = ActionAckSuccess | AckError;
+
 // ==================== 游戏常量 ====================
 
 export const GAME_CONSTANTS = {
@@ -233,39 +283,30 @@ export const GAME_CONSTANTS = {
 
 // ==================== WebSocket事件 ====================
 
-export interface SocketEvents {
-  // 客户端 → 服务器
-  'room:create': (config: RoomConfig) => void;
-  'room:join': (roomId: string, playerName: string) => void;
-  'room:leave': (roomId: string) => void;
-  'room:add_ai': (roomId: string, difficulty: AIDifficulty) => void;
-  'room:start': (roomId: string) => void;
+export interface ClientToServerEvents {
+  'room:create': (config: RoomConfig, playerName: string, callback: (response: RoomAck) => void) => void;
+  'room:join': (roomId: string, playerName: string, callback: (response: RoomAck) => void) => void;
+  'room:leave': (roomId: string, callback: (response: ActionAck) => void) => void;
+  'room:add_ai': (roomId: string, difficulty: AIDifficulty, callback: (response: RoomAck) => void) => void;
+  'room:start': (roomId: string, callback: (response: GameStartAck) => void) => void;
+  'game:exchange': (roomId: string, action: ExchangeAction, callback: (response: ActionAck) => void) => void;
+  'game:buy_protection': (roomId: string, action: BuyProtectionAction, callback: (response: ActionAck) => void) => void;
+  'game:roll_dice': (roomId: string, callback: (response: ActionAck) => void) => void;
+}
 
-  'game:exchange': (roomId: string, action: ExchangeAction) => void;
-  'game:buy_protection': (roomId: string, action: BuyProtectionAction) => void;
-  'game:roll_dice': (roomId: string) => void;
-  'game:end_turn': (roomId: string) => void;
-
-  // 服务器 → 客户端
-  'room:created': (room: Room) => void;
-  'room:joined': (room: Room) => void;
-  'room:left': (room: Room) => void;
+export interface ServerToClientEvents {
   'room:updated': (room: Room) => void;
   'game:started': (gameState: GameState) => void;
-
   'game:state': (gameState: GameState) => void;
-  'game:phase_change': (phase: GamePhase) => void;
   'game:turn_change': (playerIndex: number) => void;
-
   'game:dice_rolled': (result: DiceResult[]) => void;
-  'game:breeding': (results: any) => void;
-  'game:attack': (results: any) => void;
-
+  'game:breeding': (results: BreedingResults) => void;
+  'game:attack': (results: AttackResult) => void;
   'game:victory': (winnerId: string) => void;
   'game:finished': (gameState: GameState) => void;
-
   'ai:thinking': (playerId: string) => void;
   'ai:decision': (playerId: string, actions: PlayerAction[]) => void;
-
   'error': (message: string) => void;
 }
+
+export type SocketEvents = ClientToServerEvents & ServerToClientEvents;

@@ -8,30 +8,70 @@ import { RoomManager } from './core/RoomManager';
 import { GameEngine } from './core/GameEngine';
 import { AIService } from './services/AIService';
 import type {
+  GameState,
   RoomConfig,
   AIDifficulty,
   ExchangeAction,
   BuyProtectionAction,
+  FilteredGameState,
+  AIDecisionResponse,
+  ClientToServerEvents,
+  ServerToClientEvents,
 } from '../../shared/types/game';
 
-export class GameServer {
-  private io: SocketIOServer;
-  private roomManager: RoomManager;
-  private aiService: AIService;
+interface AIServicePort {
+  updateApiKey(key: string): void;
+  filterGameState(gameState: GameState, aiPlayerId: string): FilteredGameState;
+  getDecision(request: {
+    playerId: string;
+    gameView: FilteredGameState;
+    availableActions: string[];
+    mode: GameState['mode'];
+    difficulty: AIDifficulty;
+  }): Promise<AIDecisionResponse>;
+}
 
-  constructor(httpServer: HTTPServer, aiApiKey: string) {
-    this.io = new SocketIOServer(httpServer, {
+interface GameServerOptions {
+  roomManager?: RoomManager;
+  aiService?: AIServicePort;
+  cleanupIntervalMs?: number;
+  aiTurnDelayMs?: number;
+  enableCleanupTask?: boolean;
+}
+
+type AckSuccess = { success: true; room?: RoomConfig | GameState | unknown; gameState?: GameState; winner?: string };
+type AckFailure = { success: false; error: string };
+type AckResponse = AckSuccess | AckFailure;
+type AckCallback = (response: AckResponse) => void;
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : '未知错误';
+}
+
+export class GameServer {
+  private io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>;
+  private roomManager: RoomManager;
+  private aiService: AIServicePort;
+  private readonly aiTurnDelayMs: number;
+  private cleanupTimer?: NodeJS.Timeout;
+
+  constructor(httpServer: HTTPServer, aiApiKey: string, options: GameServerOptions = {}) {
+    this.io = new SocketIOServer<ClientToServerEvents, ServerToClientEvents>(httpServer, {
       cors: {
         origin: process.env.FRONTEND_URL || 'http://localhost:3000',
         methods: ['GET', 'POST'],
       },
     });
 
-    this.roomManager = new RoomManager();
-    this.aiService = new AIService(aiApiKey);
+    this.roomManager = options.roomManager ?? new RoomManager();
+    this.aiService = options.aiService ?? new AIService(aiApiKey);
+    this.aiTurnDelayMs = options.aiTurnDelayMs ?? 1000;
 
     this.setupSocketHandlers();
-    this.startCleanupTask();
+
+    if (options.enableCleanupTask !== false) {
+      this.startCleanupTask(options.cleanupIntervalMs);
+    }
   }
 
   private setupSocketHandlers(): void {
@@ -47,8 +87,8 @@ export class GameServer {
             socket.join(room.id);
             callback({ success: true, room });
             console.log(`Room created: ${room.id} by ${playerName}`);
-          } catch (error: any) {
-            callback({ success: false, error: error.message });
+          } catch (error: unknown) {
+            callback({ success: false, error: getErrorMessage(error) });
           }
         }
       );
@@ -64,10 +104,10 @@ export class GameServer {
             callback({ success: true, room: result.room });
             console.log(`${playerName} joined room ${roomId}`);
           } else {
-            callback({ success: false, error: result.error });
+            callback({ success: false, error: result.error ?? '加入房间失败' });
           }
-        } catch (error: any) {
-          callback({ success: false, error: error.message });
+        } catch (error: unknown) {
+          callback({ success: false, error: getErrorMessage(error) });
         }
       });
 
@@ -85,10 +125,10 @@ export class GameServer {
 
             callback({ success: true });
           } else {
-            callback({ success: false, error: result.error });
+            callback({ success: false, error: result.error ?? '离开房间失败' });
           }
-        } catch (error: any) {
-          callback({ success: false, error: error.message });
+        } catch (error: unknown) {
+          callback({ success: false, error: getErrorMessage(error) });
         }
       });
 
@@ -101,10 +141,10 @@ export class GameServer {
             this.io.to(roomId).emit('room:updated', result.room);
             callback({ success: true, room: result.room });
           } else {
-            callback({ success: false, error: result.error });
+            callback({ success: false, error: result.error ?? '添加 AI 失败' });
           }
-        } catch (error: any) {
-          callback({ success: false, error: error.message });
+        } catch (error: unknown) {
+          callback({ success: false, error: getErrorMessage(error) });
         }
       });
 
@@ -136,10 +176,10 @@ export class GameServer {
               await this.executeAITurn(roomId, gameState);
             }
           } else {
-            callback({ success: false, error: result.error });
+            callback({ success: false, error: result.error ?? '开始游戏失败' });
           }
-        } catch (error: any) {
-          callback({ success: false, error: error.message });
+        } catch (error: unknown) {
+          callback({ success: false, error: getErrorMessage(error) });
         }
       });
 
@@ -147,8 +187,8 @@ export class GameServer {
       socket.on('game:exchange', async (roomId: string, action: ExchangeAction, callback) => {
         try {
           await this.handleExchange(roomId, socket.id, action, callback);
-        } catch (error: any) {
-          callback({ success: false, error: error.message });
+        } catch (error: unknown) {
+          callback({ success: false, error: getErrorMessage(error) });
         }
       });
 
@@ -156,8 +196,8 @@ export class GameServer {
       socket.on('game:buy_protection', async (roomId: string, action: BuyProtectionAction, callback) => {
         try {
           await this.handleBuyProtection(roomId, socket.id, action, callback);
-        } catch (error: any) {
-          callback({ success: false, error: error.message });
+        } catch (error: unknown) {
+          callback({ success: false, error: getErrorMessage(error) });
         }
       });
 
@@ -165,15 +205,22 @@ export class GameServer {
       socket.on('game:roll_dice', async (roomId: string, callback) => {
         try {
           await this.handleRollDice(roomId, socket.id, callback);
-        } catch (error: any) {
-          callback({ success: false, error: error.message });
+        } catch (error: unknown) {
+          callback({ success: false, error: getErrorMessage(error) });
         }
       });
 
       // 断开连接
       socket.on('disconnect', () => {
         console.log(`Client disconnected: ${socket.id}`);
-        // TODO: 处理玩家断线
+        const result = this.roomManager.handleDisconnect(socket.id);
+
+        if (result.room) {
+          this.io.to(result.room.id).emit('room:updated', result.room);
+          if (result.room.gameState) {
+            this.io.to(result.room.id).emit('game:state', result.room.gameState);
+          }
+        }
       });
     });
   }
@@ -185,7 +232,7 @@ export class GameServer {
     roomId: string,
     playerId: string,
     action: ExchangeAction,
-    callback: Function
+    callback: AckCallback
   ): Promise<void> {
     const room = this.roomManager.getRoom(roomId);
 
@@ -217,7 +264,7 @@ export class GameServer {
     );
 
     if (!validation.valid) {
-      callback({ success: false, error: validation.reason });
+      callback({ success: false, error: validation.reason ?? '交换不合法' });
       return;
     }
 
@@ -262,7 +309,7 @@ export class GameServer {
     roomId: string,
     playerId: string,
     action: BuyProtectionAction,
-    callback: Function
+    callback: AckCallback
   ): Promise<void> {
     const room = this.roomManager.getRoom(roomId);
 
@@ -291,7 +338,7 @@ export class GameServer {
     );
 
     if (!validation.valid) {
-      callback({ success: false, error: validation.reason });
+      callback({ success: false, error: validation.reason ?? '购买防护不合法' });
       return;
     }
 
@@ -316,7 +363,7 @@ export class GameServer {
   private async handleRollDice(
     roomId: string,
     playerId: string,
-    callback: Function
+    callback: AckCallback
   ): Promise<void> {
     const room = this.roomManager.getRoom(roomId);
 
@@ -427,7 +474,7 @@ export class GameServer {
   /**
    * 处理攻击
    */
-  private async processAttacks(roomId: string, gameState: any): Promise<void> {
+  private async processAttacks(roomId: string, gameState: GameState): Promise<void> {
     const currentPlayerIndex = gameState.currentPlayerIndex;
     const currentPlayer = gameState.players[currentPlayerIndex];
 
@@ -499,10 +546,14 @@ export class GameServer {
   /**
    * 执行AI回合
    */
-  private async executeAITurn(roomId: string, gameState: any): Promise<void> {
+  private async executeAITurn(roomId: string, gameState: GameState): Promise<void> {
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    const room = this.roomManager.getRoom(roomId);
 
     if (currentPlayer.type !== 'ai') return;
+
+    const roomPlayer = room?.players.find(player => player.id === currentPlayer.id);
+    const difficulty = roomPlayer?.type === 'ai' ? roomPlayer.difficulty || 'medium' : 'medium';
 
     // 通知AI正在思考
     this.io.to(roomId).emit('ai:thinking', currentPlayer.id);
@@ -517,7 +568,7 @@ export class GameServer {
         gameView: filteredState,
         availableActions: ['exchange', 'buy_protection'],
         mode: gameState.mode,
-        difficulty: currentPlayer.difficulty || 'medium',
+        difficulty,
       });
 
       this.io.to(roomId).emit('ai:decision', currentPlayer.id, decision.actions);
@@ -566,7 +617,7 @@ export class GameServer {
       this.io.to(roomId).emit('game:state', gameState);
 
       // AI自动掷骰子
-      await new Promise(resolve => setTimeout(resolve, 1000)); // 延迟1秒
+      await new Promise(resolve => setTimeout(resolve, this.aiTurnDelayMs));
 
       // 掷骰子并继续游戏流程
       await this.handleRollDice(roomId, currentPlayer.id, () => { });
@@ -581,16 +632,28 @@ export class GameServer {
   /**
    * 定期清理房间
    */
-  private startCleanupTask(): void {
-    setInterval(() => {
+  private startCleanupTask(intervalMs: number = 60000): void {
+    this.cleanupTimer = setInterval(() => {
       const cleaned = this.roomManager.cleanup();
       if (cleaned > 0) {
         console.log(`Cleaned ${cleaned} rooms`);
       }
-    }, 60000); // 每分钟清理一次
+    }, intervalMs);
   }
 
-  public getIO(): SocketIOServer {
+  public updateApiKey(key: string): void {
+    this.aiService.updateApiKey(key);
+  }
+
+  public getIO(): SocketIOServer<ClientToServerEvents, ServerToClientEvents> {
     return this.io;
+  }
+
+  public close(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = undefined;
+    }
+    this.io.close();
   }
 }

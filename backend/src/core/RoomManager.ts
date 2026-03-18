@@ -14,6 +14,12 @@ import type {
 export class RoomManager {
   private rooms: Map<string, Room> = new Map();
 
+  private findRoomBySocketId(socketId: string): Room | undefined {
+    return Array.from(this.rooms.values()).find(room =>
+      room.players.some(player => player.socketId === socketId)
+    );
+  }
+
   /**
    * 创建房间
    */
@@ -82,13 +88,13 @@ export class RoomManager {
       return { success: false, error: '游戏已经开始' };
     }
 
-    if (room.players.length >= room.maxPlayers) {
-      return { success: false, error: '房间已满' };
-    }
-
     // 检查是否已经在房间中
     if (room.players.some(p => p.id === playerId)) {
       return { success: false, error: '你已经在房间中' };
+    }
+
+    if (room.players.length >= room.maxPlayers) {
+      return { success: false, error: '房间已满' };
     }
 
     const player: Player = {
@@ -291,5 +297,35 @@ export class RoomManager {
     }
 
     return cleaned;
+  }
+
+  handleDisconnect(socketId: string): { room?: Room; removedPlayerId?: string } {
+    const room = this.findRoomBySocketId(socketId);
+
+    if (!room) {
+      return {};
+    }
+
+    const player = room.players.find(entry => entry.socketId === socketId);
+
+    if (!player) {
+      return {};
+    }
+
+    if (room.status === 'waiting') {
+      room.players = room.players.filter(entry => entry.id !== player.id);
+
+      if (room.players.length === 0) {
+        this.rooms.delete(room.id);
+        return { removedPlayerId: player.id };
+      }
+
+      return { room, removedPlayerId: player.id };
+    }
+
+    player.isConnected = false;
+    player.isReady = false;
+
+    return { room, removedPlayerId: player.id };
   }
 }

@@ -1,152 +1,98 @@
-/**
- * Socket.io客户端Hook
- */
-
 import { useEffect, useRef, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { io, type Socket } from 'socket.io-client';
 import type {
-  Room,
-  GameState,
+  AttackResult,
+  BreedingResults,
+  ClientToServerEvents,
   DiceResult,
+  GameState,
+  PlayerAction,
+  Room,
+  ServerToClientEvents,
 } from '@shared/types/game';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 
 interface SocketHandlers {
-  onRoomCreated?: (room: Room) => void;
-  onRoomJoined?: (room: Room) => void;
   onRoomUpdated?: (room: Room) => void;
   onGameStarted?: (gameState: GameState) => void;
   onGameState?: (gameState: GameState) => void;
   onDiceRolled?: (result: DiceResult[]) => void;
-  onBreeding?: (results: any) => void;
-  onAttack?: (attack: any) => void;
+  onBreeding?: (results: BreedingResults) => void;
+  onAttack?: (attack: AttackResult) => void;
   onVictory?: (winnerId: string) => void;
   onGameFinished?: (gameState: GameState) => void;
   onAIThinking?: (playerId: string) => void;
-  onAIDecision?: (playerId: string, actions: any[]) => void;
+  onAIDecision?: (playerId: string, actions: PlayerAction[]) => void;
   onError?: (error: string) => void;
 }
 
 export function useSocket(handlers: SocketHandlers = {}) {
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const [socket, setSocket] = useState<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
   const handlersRef = useRef(handlers);
 
-  // 更新handlers引用
   useEffect(() => {
     handlersRef.current = handlers;
   }, [handlers]);
 
   useEffect(() => {
-    console.log('Creating socket connection...');
-
-    // 创建Socket连接
-    const newSocket = io(SOCKET_URL, {
+    const newSocket: Socket<ServerToClientEvents, ClientToServerEvents> = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5,
     });
 
-    // 连接事件
-    newSocket.on('connect', () => {
-      console.log('Socket connected:', newSocket.id);
+    newSocket.on('room:updated', room => {
+      handlersRef.current.onRoomUpdated?.(room);
     });
 
-    newSocket.on('disconnect', () => {
-      console.log('Socket disconnected');
+    newSocket.on('game:started', gameState => {
+      handlersRef.current.onGameStarted?.(gameState);
     });
 
-    // 房间事件 - 使用最新的handlers
-    newSocket.on('room:created', (room: Room) => {
-      if (handlersRef.current.onRoomCreated) {
-        handlersRef.current.onRoomCreated(room);
-      }
+    newSocket.on('game:state', gameState => {
+      handlersRef.current.onGameState?.(gameState);
     });
 
-    newSocket.on('room:joined', (room: Room) => {
-      if (handlersRef.current.onRoomJoined) {
-        handlersRef.current.onRoomJoined(room);
-      }
+    newSocket.on('game:dice_rolled', result => {
+      handlersRef.current.onDiceRolled?.(result);
     });
 
-    newSocket.on('room:updated', (room: Room) => {
-      if (handlersRef.current.onRoomUpdated) {
-        handlersRef.current.onRoomUpdated(room);
-      }
+    newSocket.on('game:breeding', results => {
+      handlersRef.current.onBreeding?.(results);
     });
 
-    // 游戏事件
-    newSocket.on('game:started', (gameState: GameState) => {
-      if (handlersRef.current.onGameStarted) {
-        handlersRef.current.onGameStarted(gameState);
-      }
+    newSocket.on('game:attack', attack => {
+      handlersRef.current.onAttack?.(attack);
     });
 
-    newSocket.on('game:state', (gameState: GameState) => {
-      if (handlersRef.current.onGameState) {
-        handlersRef.current.onGameState(gameState);
-      }
+    newSocket.on('game:victory', winnerId => {
+      handlersRef.current.onVictory?.(winnerId);
     });
 
-    newSocket.on('game:dice_rolled', (result: DiceResult[]) => {
-      if (handlersRef.current.onDiceRolled) {
-        handlersRef.current.onDiceRolled(result);
-      }
+    newSocket.on('game:finished', gameState => {
+      handlersRef.current.onGameFinished?.(gameState);
     });
 
-    newSocket.on('game:breeding', (results: any) => {
-      if (handlersRef.current.onBreeding) {
-        handlersRef.current.onBreeding(results);
-      }
+    newSocket.on('ai:thinking', playerId => {
+      handlersRef.current.onAIThinking?.(playerId);
     });
 
-    newSocket.on('game:attack', (attack: any) => {
-      if (handlersRef.current.onAttack) {
-        handlersRef.current.onAttack(attack);
-      }
+    newSocket.on('ai:decision', (playerId, actions) => {
+      handlersRef.current.onAIDecision?.(playerId, actions);
     });
 
-    newSocket.on('game:victory', (winnerId: string) => {
-      if (handlersRef.current.onVictory) {
-        handlersRef.current.onVictory(winnerId);
-      }
-    });
-
-    newSocket.on('game:finished', (gameState: GameState) => {
-      if (handlersRef.current.onGameFinished) {
-        handlersRef.current.onGameFinished(gameState);
-      }
-    });
-
-    // AI事件
-    newSocket.on('ai:thinking', (playerId: string) => {
-      if (handlersRef.current.onAIThinking) {
-        handlersRef.current.onAIThinking(playerId);
-      }
-    });
-
-    newSocket.on('ai:decision', (playerId: string, actions: any[]) => {
-      if (handlersRef.current.onAIDecision) {
-        handlersRef.current.onAIDecision(playerId, actions);
-      }
-    });
-
-    // 错误事件
-    newSocket.on('error', (error: string) => {
-      if (handlersRef.current.onError) {
-        handlersRef.current.onError(error);
-      }
+    newSocket.on('error', error => {
+      handlersRef.current.onError?.(error);
     });
 
     setSocket(newSocket);
 
-    // 清理：只在组件卸载时执行
     return () => {
-      console.log('Cleaning up socket connection...');
       newSocket.disconnect();
     };
-  }, []); // 空依赖数组，只在挂载时运行一次
+  }, []);
 
   return socket;
 }

@@ -1,526 +1,531 @@
-import { useState } from 'react';
-import { useGameStore } from '../store/gameStore';
-import { Socket } from 'socket.io-client';
+import { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import farmStageUrl from '../assets/farm-stage.svg';
+import foxRunUrl from '../assets/fox-run.svg';
+import sproutBurstUrl from '../assets/sprout-burst.svg';
+import type {
+  AnimalType,
+  AttackResult,
+  BreedingResults,
+  GameAction,
+  GameMode,
+  GameState,
+  Player,
+  PlayerState,
+  Room,
+} from '@shared/types/game';
 
-interface HomePageProps {
-  socket: Socket | null;
+const animalMeta: Record<AnimalType, { icon: string; label: string }> = {
+  rabbit: { icon: '🐰', label: '兔子' },
+  sheep: { icon: '🐑', label: '绵羊' },
+  pig: { icon: '🐷', label: '猪' },
+  cow: { icon: '🐄', label: '奶牛' },
+  horse: { icon: '🐴', label: '马' },
+};
+
+const modeCopy: Record<GameMode, { title: string; detail: string }> = {
+  classic: { title: '经典农场', detail: '最适合第一次开始玩。' },
+  casual: { title: '欢乐丰收', detail: '节奏更轻快，玩起来更放松。' },
+  hard: { title: '勇气挑战', detail: '更刺激，适合进阶玩家。' },
+};
+
+type DemoStage = 'lobby' | 'room' | 'game';
+
+const demoPlayers: Player[] = [
+  { id: 'p1', name: 'Mira', type: 'human', socketId: 'p1', isReady: true, isConnected: true },
+  { id: 'p2', name: 'Ash', type: 'human', socketId: 'p2', isReady: true, isConnected: true },
+  { id: 'ai-1', name: '天才李四', type: 'ai', difficulty: 'hard', isReady: true, isConnected: true },
+];
+
+const demoPlayerStates: PlayerState[] = [
+  {
+    id: 'p1',
+    name: 'Mira',
+    type: 'human',
+    animals: { rabbit: 12, sheep: 2, pig: 1, cow: 1, horse: 0 },
+    protection: { smallDog: 1, bigDog: 0 },
+    isWinner: false,
+  },
+  {
+    id: 'p2',
+    name: 'Ash',
+    type: 'human',
+    animals: { rabbit: 8, sheep: 1, pig: 1, cow: 0, horse: 0 },
+    protection: { smallDog: 0, bigDog: 0 },
+    isWinner: false,
+  },
+  {
+    id: 'ai-1',
+    name: '天才李四',
+    type: 'ai',
+    animals: { rabbit: 6, sheep: 2, pig: 2, cow: 1, horse: 0 },
+    protection: { smallDog: 0, bigDog: 1 },
+    isWinner: false,
+  },
+];
+
+const demoHistory: GameAction[] = [
+  {
+    type: 'exchange',
+    playerId: 'p1',
+    timestamp: Date.now() - 1000 * 60 * 2,
+    details: { from: 'rabbit', to: 'sheep', fromCount: 6, toCount: 1 },
+  },
+  {
+    type: 'buy_protection',
+    playerId: 'ai-1',
+    timestamp: Date.now() - 1000 * 60,
+    details: { protection: 'bigDog' },
+  },
+  {
+    type: 'roll_dice',
+    playerId: 'p2',
+    timestamp: Date.now() - 1000 * 22,
+    details: { diceResult: ['rabbit', 'fox'] },
+  },
+];
+
+const demoRoom: Room = {
+  id: 'amber-orchard',
+  name: 'Amber Orchard',
+  mode: 'classic',
+  maxPlayers: 4,
+  players: demoPlayers,
+  status: 'waiting',
+  createdAt: new Date(),
+};
+
+const demoGameState: GameState = {
+  roomId: 'amber-orchard',
+  mode: 'classic',
+  currentRound: 7,
+  currentPlayerIndex: 0,
+  phase: 'exchange',
+  players: demoPlayerStates,
+  bank: { rabbit: 34, sheep: 16, pig: 14, cow: 8, horse: 5, smallDog: 2, bigDog: 1 },
+  diceResult: ['rabbit', 'fox'],
+  history: demoHistory,
+};
+
+const diceShowcase = ['rabbit', 'fox'] as const;
+const breedingShowcase: BreedingResults = {
+  rabbit: { old: 11, new: 14, change: 3 },
+  sheep: { old: 1, new: 2, change: 1 },
+};
+const attackShowcase: AttackResult = {
+  type: 'fox',
+  attacker: 'bank',
+  victim: 'p2',
+  blocked: false,
+  rabbitsLost: 7,
+};
+
+const avatarMap: Record<string, string> = {
+  p1: '🥸',
+  p2: '👩‍🌾',
+  'ai-1': '🤖',
+};
+
+function getPlayerBadge(player: PlayerState) {
+  return avatarMap[player.id] ?? '👤';
 }
 
-export default function HomePage({ socket }: HomePageProps) {
-  const { currentRoom, gameState, isConnected, setCurrentRoom, setPlayerId, diceAnimation, aiThinking, breedingAnimation, attackAnimation } = useGameStore();
-  const [playerName, setPlayerName] = useState('');
-  const [roomName, setRoomName] = useState('');
+function actionLabel(entry: GameAction, room: Room) {
+  const actor = room.players.find(player => player.id === entry.playerId)?.name ?? entry.playerId;
 
-  // 获取当前玩家状态
-  const myPlayer = gameState?.players.find(p => p.id === socket?.id);
+  if (entry.type === 'exchange') {
+    const details = entry.details as { from: string; to: string; fromCount: number; toCount: number };
+    return `${actor} 用${details.fromCount}${details.from}换${details.toCount}${details.to}`;
+  }
+  if (entry.type === 'buy_protection') {
+    const details = entry.details as { protection: string };
+    return `${actor} 买了${details.protection === 'smallDog' ? '小狗' : '大狗'}`;
+  }
+  if (entry.type === 'roll_dice') {
+    return `${actor} 掷骰子`;
+  }
+  return `${actor} 行动`;
+}
 
-  const handleCreateRoom = () => {
-    if (!playerName || !roomName) {
-      alert('请输入玩家名称和房间名称');
-      return;
-    }
-
-    if (!socket) {
-      alert('Socket连接未建立');
-      return;
-    }
-
-    socket.emit(
-      'room:create',
-      {
-        name: roomName,
-        mode: 'classic',
-        maxPlayers: 4,
-      },
-      playerName,
-      (response: any) => {
-        if (response.success) {
-          console.log('Room created:', response.room);
-          setCurrentRoom(response.room);
-          setPlayerId(socket.id || '');
-        } else {
-          console.error('Failed to create room:', response.error);
-          alert('创建房间失败: ' + response.error);
-        }
-      }
-    );
-  };
-
+function StatusPill() {
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
-        {/* 标题 */}
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold text-green-800 mb-4">
-            🐰 超级农场主 🐴
-          </h1>
-          <p className="text-xl text-gray-600">
-            Super Farmer - 经典概率策略游戏
-          </p>
-          <div className="mt-4">
-            <span
-              className={`inline-block px-4 py-2 rounded-full ${isConnected
-                ? 'bg-green-100 text-green-800'
-                : 'bg-red-100 text-red-800'
-                }`}
-            >
-              {isConnected ? '🟢 已连接' : '🔴 未连接'}
-            </span>
-          </div>
-        </div>
+    <div className="status-pill is-online">
+      <span className="status-dot" />
+      演示版
+    </div>
+  );
+}
 
-        {/* 创建/加入房间 */}
-        {!currentRoom && !gameState && (
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">
-              开始游戏
-            </h2>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  玩家名称
-                </label>
-                <input
-                  type="text"
-                  value={playerName}
-                  onChange={(e) => setPlayerName(e.target.value)}
-                  placeholder="输入你的名字"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  房间名称
-                </label>
-                <input
-                  type="text"
-                  value={roomName}
-                  onChange={(e) => setRoomName(e.target.value)}
-                  placeholder="输入房间名称"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
-              </div>
-
-              <button
-                onClick={handleCreateRoom}
-                disabled={!isConnected}
-                className="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-              >
-                创建房间
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* 房间信息 */}
-        {currentRoom && !gameState && (
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">
-              房间：{currentRoom.name}
-            </h2>
-
-            <div className="space-y-4">
-              <div>
-                <h3 className="font-semibold text-gray-700 mb-2">
-                  玩家列表 ({currentRoom.players.length}/{currentRoom.maxPlayers})
-                </h3>
-                <div className="space-y-2">
-                  {currentRoom.players.map((player) => (
-                    <div
-                      key={player.id}
-                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                    >
-                      <span className="font-medium">
-                        {player.type === 'ai' ? '🤖' : '👤'} {player.name}
-                      </span>
-                      <span
-                        className={`text-sm ${player.isReady ? 'text-green-600' : 'text-gray-400'
-                          }`}
-                      >
-                        {player.isReady ? '✓ 已准备' : '等待中'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                onClick={() => {
-                  socket?.emit(
-                    'room:add_ai',
-                    currentRoom.id,
-                    'easy',
-                    (response: any) => {
-                      if (!response.success) {
-                        alert(response.error);
-                      }
-                    }
-                  );
-                }}
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                添加AI玩家（简单）
-              </button>
-
-              <button
-                onClick={() => {
-                  socket?.emit('room:start', currentRoom.id, (response: any) => {
-                    if (!response.success) {
-                      alert(response.error);
-                    }
-                  });
-                }}
-                className="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-700 transition-colors"
-              >
-                开始游戏
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* 游戏中 - 左中右三列布局 */}
-        {gameState && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-            {/* 左侧：玩家状态 */}
-            <div className="lg:col-span-1">
-              <div className="bg-white rounded-lg shadow-lg p-4 sticky top-4">
-                <h3 className="text-lg font-bold text-gray-800 mb-3">👥 玩家状态</h3>
-                <div className="space-y-3">
-                  {gameState.players.map((player, index) => (
-                    <div
-                      key={player.id}
-                      className={`p-3 rounded-lg ${index === gameState.currentPlayerIndex
-                        ? 'bg-green-100 border-2 border-green-400'
-                        : 'bg-gray-50'
-                        }`}
-                    >
-                      <div className="font-semibold text-sm mb-1 flex items-center gap-1">
-                        {player.type === 'ai' && '🤖'}
-                        {player.name}
-                        {index === gameState.currentPlayerIndex && <span className="text-green-600 text-xs">(回合中)</span>}
-                      </div>
-                      <div className="grid grid-cols-5 gap-1 text-xs">
-                        <div className="text-center">🐰<br />{player.animals.rabbit}</div>
-                        <div className="text-center">🐑<br />{player.animals.sheep}</div>
-                        <div className="text-center">🐷<br />{player.animals.pig}</div>
-                        <div className="text-center">🐄<br />{player.animals.cow}</div>
-                        <div className="text-center">🐎<br />{player.animals.horse}</div>
-                      </div>
-                      <div className="mt-1 text-xs text-gray-500">
-                        🐕{player.protection.smallDog} 🦮{player.protection.bigDog}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* 银行库存 */}
-                <div className="mt-4 pt-3 border-t">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-2">🏦 银行库存</h4>
-                  <div className="grid grid-cols-5 gap-1 text-xs text-center bg-gray-50 p-2 rounded">
-                    <div>🐰<br />{gameState.bank.rabbit}</div>
-                    <div>🐑<br />{gameState.bank.sheep}</div>
-                    <div>🐷<br />{gameState.bank.pig}</div>
-                    <div>🐄<br />{gameState.bank.cow}</div>
-                    <div>🐎<br />{gameState.bank.horse}</div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1 text-xs text-center mt-1">
-                    <div className="bg-yellow-50 p-1 rounded">🐕{gameState.bank.smallDog}</div>
-                    <div className="bg-yellow-50 p-1 rounded">🦮{gameState.bank.bigDog}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 中间：主游戏区域 */}
-            <div className="lg:col-span-2">
-              <div className="bg-white rounded-lg shadow-lg p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-gray-800">🎮 游戏进行中</h2>
-                  <div className="text-sm text-gray-600">
-                    回合 {gameState.currentRound} | 阶段: {gameState.phase}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  {diceAnimation && diceAnimation.length > 0 && (
-                    <div className="p-4 bg-yellow-50 border-2 border-yellow-300 rounded-lg">
-                      <h3 className="font-semibold text-gray-700 mb-2">🎲 骰子结果</h3>
-                      <div className="flex gap-3 text-3xl justify-center">
-                        {diceAnimation.map((face, idx) => (
-                          <div key={idx} className="bg-white p-3 rounded-lg shadow">
-                            {face === 'rabbit' && '🐰'}
-                            {face === 'sheep' && '🐑'}
-                            {face === 'pig' && '🐷'}
-                            {face === 'cow' && '🐄'}
-                            {face === 'horse' && '🐎'}
-                            {face === 'fox' && '🦊'}
-                            {face === 'wolf' && '🐺'}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* AI思考状态 - 使用固定位置浮动提示 */}
-                  {aiThinking && gameState.players[gameState.currentPlayerIndex].type === 'ai' && (
-                    <div className="fixed bottom-4 right-4 z-50 p-4 bg-purple-600 text-white rounded-lg shadow-lg">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl">🤖</span>
-                        <span className="font-semibold">
-                          {gameState.players.find(p => p.id === aiThinking)?.name || 'AI'} 正在思考...
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 繁殖结果显示 */}
-                  {breedingAnimation && (
-                    <div className="p-4 bg-green-50 border-2 border-green-300 rounded-lg">
-                      <h3 className="font-semibold text-gray-700 mb-2">🌱 繁殖结果</h3>
-                      <div className="grid grid-cols-5 gap-2 text-sm">
-                        {Object.entries(breedingAnimation).map(([animal, data]: [string, any]) => (
-                          <div key={animal} className={`p-2 rounded ${data.change !== 0 ? (data.change > 0 ? 'bg-green-100' : 'bg-red-100') : 'bg-gray-100'}`}>
-                            <div>
-                              {animal === 'rabbit' && '🐰'}
-                              {animal === 'sheep' && '🐑'}
-                              {animal === 'pig' && '🐷'}
-                              {animal === 'cow' && '🐄'}
-                              {animal === 'horse' && '🐎'}
-                            </div>
-                            <div className="font-semibold">
-                              {data.old} → {data.new}
-                              <span className={data.change > 0 ? 'text-green-600' : data.change < 0 ? 'text-red-600' : ''}>
-                                {data.change !== 0 && ` (${data.change > 0 ? '+' : ''}${data.change})`}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 攻击结果显示 */}
-                  {attackAnimation && (
-                    <div className="p-4 bg-red-50 border-2 border-red-300 rounded-lg">
-                      <h3 className="font-semibold text-gray-700 mb-2">
-                        {attackAnimation.type === 'fox' ? '🦊 狐狸攻击！' : '🐺 狼攻击！'}
-                      </h3>
-                      {attackAnimation.blocked ? (
-                        <p className="text-green-600 font-semibold">✅ 被防护犬抵挡！</p>
-                      ) : (
-                        <p className="text-red-600 font-semibold">
-                          ❌ 攻击成功！
-                          {attackAnimation.rabbitsLost && ` 失去 ${attackAnimation.rabbitsLost} 只兔子`}
-                          {attackAnimation.animalsLost && Object.entries(attackAnimation.animalsLost).map(([animal, count]) =>
-                            count ? ` 失去 ${count} 只${animal}` : ''
-                          ).join('')}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 游戏操作 */}
-                  {currentRoom && gameState.players[gameState.currentPlayerIndex].id === socket?.id && (
-                    <div className="p-4 bg-blue-50 rounded-lg">
-                      <h3 className="font-semibold text-gray-700 mb-3">🎯 你的回合</h3>
-
-                      {gameState.phase === 'exchange' && (
-                        <div className="space-y-4">
-                          {/* 交换动物 */}
-                          <div>
-                            <p className="text-sm font-medium text-gray-700 mb-2">交换动物：</p>
-                            <div className="grid grid-cols-2 gap-2">
-                              <button
-                                onClick={() => {
-                                  socket?.emit('game:exchange', currentRoom.id, { type: 'exchange', from: 'rabbit', to: 'sheep', fromCount: 6, toCount: 1 }, (r: any) => {
-                                    if (!r.success) alert(r.error);
-                                  });
-                                }}
-                                disabled={!myPlayer || myPlayer.animals.rabbit < 6}
-                                className="text-xs p-2 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                6🐰 → 1🐑
-                              </button>
-                              <button
-                                onClick={() => {
-                                  socket?.emit('game:exchange', currentRoom.id, { type: 'exchange', from: 'sheep', to: 'pig', fromCount: 2, toCount: 1 }, (r: any) => {
-                                    if (!r.success) alert(r.error);
-                                  });
-                                }}
-                                disabled={!myPlayer || myPlayer.animals.sheep < 2}
-                                className="text-xs p-2 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                2🐑 → 1🐷
-                              </button>
-                              <button
-                                onClick={() => {
-                                  socket?.emit('game:exchange', currentRoom.id, { type: 'exchange', from: 'pig', to: 'cow', fromCount: 3, toCount: 1 }, (r: any) => {
-                                    if (!r.success) alert(r.error);
-                                  });
-                                }}
-                                disabled={!myPlayer || myPlayer.animals.pig < 3}
-                                className="text-xs p-2 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                3🐷 → 1🐄
-                              </button>
-                              <button
-                                onClick={() => {
-                                  socket?.emit('game:exchange', currentRoom.id, { type: 'exchange', from: 'cow', to: 'horse', fromCount: 2, toCount: 1 }, (r: any) => {
-                                    if (!r.success) alert(r.error);
-                                  });
-                                }}
-                                disabled={!myPlayer || myPlayer.animals.cow < 2}
-                                className="text-xs p-2 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                2🐄 → 1🐎
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* 购买防护 */}
-                          <div>
-                            <p className="text-sm font-medium text-gray-700 mb-2">购买防护：</p>
-                            <div className="grid grid-cols-2 gap-2">
-                              <button
-                                onClick={() => {
-                                  socket?.emit('game:buy_protection', currentRoom.id, { type: 'buy_protection', protection: 'smallDog' }, (r: any) => {
-                                    if (!r.success) alert(r.error);
-                                  });
-                                }}
-                                disabled={!myPlayer || myPlayer.animals.rabbit < 1 || gameState.bank.smallDog < 1}
-                                className="text-xs p-2 bg-yellow-100 rounded hover:bg-yellow-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                1🐰 → 🐕小狗 (防狐狸)
-                              </button>
-                              <button
-                                onClick={() => {
-                                  socket?.emit('game:buy_protection', currentRoom.id, { type: 'buy_protection', protection: 'bigDog' }, (r: any) => {
-                                    if (!r.success) alert(r.error);
-                                  });
-                                }}
-                                disabled={!myPlayer || myPlayer.animals.sheep < 1 || gameState.bank.bigDog < 1}
-                                className="text-xs p-2 bg-yellow-100 rounded hover:bg-yellow-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                1🐑 → 🦮大狗 (防狼)
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* 掷骰子 */}
-                          <button
-                            onClick={() => {
-                              socket?.emit('game:roll_dice', currentRoom.id, (response: any) => {
-                                if (!response.success) {
-                                  alert('掷骰子失败: ' + response.error);
-                                }
-                              });
-                            }}
-                            className="w-full bg-orange-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-orange-700 transition-colors"
-                          >
-                            🎲 结束交换，掷骰子
-                          </button>
-                        </div>
-                      )}
-
-                      {gameState.phase !== 'exchange' && (
-                        <p className="text-sm text-gray-600">
-                          当前阶段: {gameState.phase}，请等待...
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* 右侧：历史记录面板 */}
-            <div className="lg:col-span-1">
-              <div className="bg-white rounded-lg shadow-lg p-6 h-full max-h-[800px] flex flex-col">
-                <h3 className="text-xl font-bold text-gray-800 mb-4">📜 游戏记录</h3>
-                <div className="flex-1 overflow-y-auto space-y-2">
-                  {gameState.history.length === 0 ? (
-                    <p className="text-gray-400 text-sm text-center py-8">暂无记录</p>
-                  ) : (
-                    gameState.history.slice().reverse().map((entry, idx) => (
-                      <div key={idx} className="p-3 bg-gray-50 rounded border-l-4 border-blue-400">
-                        <div className="text-xs text-gray-500 mb-1">
-                          {new Date(entry.timestamp).toLocaleTimeString()}
-                        </div>
-                        <div className="text-sm">
-                          <span className="font-semibold">
-                            {gameState.players.find(p => p.id === entry.playerId)?.name}
-                          </span>
-                          {entry.type === 'exchange' && (
-                            <span>
-                              {' '}交换了 {(entry.details as any).fromCount}只{(entry.details as any).from} → {(entry.details as any).toCount}只{(entry.details as any).to}
-                            </span>
-                          )}
-                          {entry.type === 'buy_protection' && (
-                            <span>
-                              {' '}购买了 {(entry.details as any).protection === 'smallDog' ? '🐕小狗' : '🦮大狗'}
-                            </span>
-                          )}
-                          {entry.type === 'roll_dice' && (
-                            <span>
-                              {' '}掷骰子: {(entry.details as any).diceResult?.map((d: string) =>
-                                d === 'rabbit' ? '🐰' : d === 'sheep' ? '🐑' : d === 'pig' ? '🐷' :
-                                  d === 'cow' ? '🐄' : d === 'horse' ? '🐎' : d === 'fox' ? '🦊' : d === 'wolf' ? '🐺' : d
-                              ).join(' ')}
-                            </span>
-                          )}
-                          {entry.type === 'breeding' && (
-                            <span>
-                              {' '}繁殖结果: {Object.entries((entry.details as any).breedingResults || {})
-                                .filter(([, data]: [string, any]) => data.change > 0)
-                                .map(([animal, data]: [string, any]) => {
-                                  const emoji = animal === 'rabbit' ? '🐰' : animal === 'sheep' ? '🐑' :
-                                    animal === 'pig' ? '🐷' : animal === 'cow' ? '🐄' : animal === 'horse' ? '🐎' : animal;
-                                  return `${emoji}+${data.change}`;
-                                }).join(' ') || '无变化'}
-                            </span>
-                          )}
-                          {entry.type === 'attack' && (
-                            <span>
-                              {(entry.details as any).attackType === 'fox' ? ' 🦊狐狸攻击 ' : ' 🐺狼攻击 '}
-                              {(entry.details as any).victimName}
-                              {(entry.details as any).blocked ? ' ✅被防护犬抵挡！' :
-                                (entry.details as any).attackType === 'fox' ?
-                                  ` ❌失去${(entry.details as any).rabbitsLost}只兔子` :
-                                  ' ❌失去大量动物'}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 游戏说明 */}
-        <div className="mt-8 bg-white rounded-lg shadow-lg p-8">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">游戏说明</h2>
-          <div className="prose text-gray-600">
-            <p>
-              <strong>目标：</strong>
-              收集齐5种动物（兔子、羊、猪、牛、马）各至少1只
-            </p>
-            <p>
-              <strong>玩法：</strong>
-            </p>
-            <ul>
-              <li>交换阶段：可以交换动物或购买防护</li>
-              <li>掷骰子：两个不同骰子，马在A骰、牛在B骰</li>
-              <li>繁殖：有种才能繁殖！获得数 = (手牌+骰子)÷2</li>
-              <li>攻击：狐狸清空兔子，狼清空羊/猪/牛（有狗可防护）</li>
-            </ul>
-          </div>
+function HeroCard({ mode, setMode, onCreate, onJoin }: { mode: GameMode; setMode: (mode: GameMode) => void; onCreate: () => void; onJoin: () => void }) {
+  return (
+    <section className="hero-shell">
+      <div className="hero-copy">
+        <div className="eyebrow">欢迎来到</div>
+        <h1>超级农场主</h1>
+        <p>
+          和小伙伴们一起经营农场，收集动物，躲避狐狸和狼的攻击！
+        </p>
+        <div className="hero-modes">
+          {(['classic', 'casual', 'hard'] as GameMode[]).map(option => (
+            <button key={option} type="button" className={`mode-chip ${mode === option ? 'is-selected' : ''}`} onClick={() => setMode(option)}>
+              <strong>{modeCopy[option].title}</strong>
+              <span>{modeCopy[option].detail}</span>
+            </button>
+          ))}
         </div>
       </div>
+
+      <div className="hero-panel panel">
+        <div className="panel-header">
+          <div>
+            <span className="eyebrow">开始游戏</span>
+            <h2>选择场景</h2>
+          </div>
+          <StatusPill />
+        </div>
+
+        <div className="preview-grid single-column">
+          <div className="preview-card warm">
+            <h3>🏠 欢乐大厅</h3>
+            <p>创建或加入游戏房间</p>
+          </div>
+          <div className="preview-card olive">
+            <h3>🎮 游戏桌面</h3>
+            <p>查看对局场景演示</p>
+          </div>
+        </div>
+
+        <div className="cta-row">
+          <button type="button" className="primary-cta" onClick={onCreate}>
+            看房间场景
+          </button>
+          <button type="button" className="secondary-cta" onClick={onJoin}>
+            看游戏桌面
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RoomStage({ room, onStart, onBack }: { room: Room; onStart: () => void; onBack: () => void }) {
+  return (
+    <section className="room-stage">
+      <div className="panel room-hero">
+        <div className="panel-header">
+          <div>
+            <span className="eyebrow">准备房间</span>
+            <h2>{room.name}</h2>
+          </div>
+          <div className="room-id-tag">{room.id}</div>
+        </div>
+
+        <div className="seat-grid">
+          {room.players.map(player => (
+            <motion.div key={player.id} layout className={`seat-card ${player.type === 'ai' ? 'is-ai' : ''}`}>
+              <div className="seat-avatar">
+                {avatarMap[player.id] ?? '👤'}
+              </div>
+              <div className="seat-info">
+                <strong>{player.name}</strong>
+                <span>{player.isReady ? '✓ 已准备' : '等待中'}</span>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+
+        <div className="cta-row">
+          <button type="button" className="ghost-cta" onClick={onBack}>
+            ← 返回
+          </button>
+          <button type="button" className="primary-cta" onClick={onStart}>
+            开始游戏 →
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PlayerBadge({ player, isCurrent, isSelf }: { player: PlayerState; isCurrent: boolean; isSelf: boolean }) {
+  return (
+    <motion.div 
+      layout 
+      className={`player-badge ${isCurrent ? 'is-current' : ''} ${isSelf ? 'is-self' : ''}`}
+      animate={isCurrent ? { scale: [1, 1.05, 1] } : {}}
+      transition={{ repeat: Infinity, duration: 2 }}
+    >
+      <div className="player-avatar">{getPlayerBadge(player)}</div>
+      <div className="player-info">
+        <strong>{player.name}</strong>
+        <div className="player-animals">
+          {Object.entries(animalMeta).slice(0, 3).map(([animal, meta]) => (
+            <span key={animal}>{meta.icon}{player.animals[animal as AnimalType]}</span>
+          ))}
+          {player.protection.smallDog > 0 && <span>🐕{player.protection.smallDog}</span>}
+          {player.protection.bigDog > 0 && <span>🦮{player.protection.bigDog}</span>}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function ActionButton({ children, disabled = false, onClick, variant = 'default' }: { children: React.ReactNode; disabled?: boolean; onClick?: () => void; variant?: 'default' | 'guard' | 'primary' }) {
+  return (
+    <button 
+      type="button" 
+      className={`game-action-btn ${variant}`} 
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function HistoryModal({ room, gameState, isOpen, onClose }: { room: Room; gameState: GameState; isOpen: boolean; onClose: () => void }) {
+  if (!isOpen) return null;
+
+  return (
+    <motion.div
+      className="history-modal"
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 20, scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+    >
+      <div className="history-modal-header">
+        <h3>📜 游戏记录</h3>
+        <button type="button" className="history-close-btn" onClick={onClose}>✕</button>
+      </div>
+      <div className="history-list">
+        {gameState.history.slice().reverse().map((entry, index) => (
+          <motion.div
+            key={`${entry.timestamp}-${index}`}
+            className="history-entry"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.05 }}
+          >
+            <span className="history-time">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="history-text">{actionLabel(entry, room)}</span>
+          </motion.div>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+function GameStage({ room, gameState, visualState, setVisualState, onBack }: { room: Room; gameState: GameState; visualState: 'idle' | 'dice' | 'breeding' | 'attack'; setVisualState: (value: 'idle' | 'dice' | 'breeding' | 'attack') => void; onBack: () => void }) {
+  const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+  const [showHistory, setShowHistory] = useState(false);
+
+  return (
+    <section className="game-layout">
+      {/* 顶部状态栏 */}
+      <header className="game-header">
+        <div className="header-left">
+          <button type="button" className="back-btn" onClick={onBack}>←</button>
+          <div className="room-info">
+            <h2>{room.name}</h2>
+            <span>第 {gameState.currentRound} 回合</span>
+          </div>
+        </div>
+        <div className="header-center">
+          <motion.div 
+            className="current-turn-badge"
+            animate={{ scale: [1, 1.05, 1] }}
+            transition={{ repeat: Infinity, duration: 2.5 }}
+          >
+            <span>轮到</span>
+            <strong>{currentPlayer.name}</strong>
+          </motion.div>
+        </div>
+        <div className="header-right">
+          <button 
+            type="button" 
+            className="history-toggle-btn"
+            onClick={() => setShowHistory(!showHistory)}
+          >
+            📜 记录
+          </button>
+        </div>
+      </header>
+
+      {/* 玩家条 */}
+      <div className="players-bar">
+        {gameState.players.map((player, index) => (
+          <PlayerBadge 
+            key={player.id} 
+            player={player} 
+            isCurrent={index === gameState.currentPlayerIndex}
+            isSelf={player.id === 'p1'}
+          />
+        ))}
+      </div>
+
+      {/* 主舞台 */}
+      <div className="stage-area">
+        <div className="stage-background">
+          <img src={farmStageUrl} alt="农场" className="farm-bg" />
+          <div className="cloud cloud-1" />
+          <div className="cloud cloud-2" />
+        </div>
+
+        <AnimatePresence mode="wait">
+          {visualState === 'idle' && (
+            <motion.div 
+              key="idle" 
+              className="stage-content"
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }}
+            >
+              <div className="idle-hint">
+                <h3>🎯 轮到你了！</h3>
+                <p>点击下方的按钮交换动物或购买保护</p>
+              </div>
+            </motion.div>
+          )}
+
+          {visualState === 'dice' && (
+            <motion.div 
+              key="dice" 
+              className="stage-content"
+              initial={{ opacity: 0, scale: 0.9 }} 
+              animate={{ opacity: 1, scale: 1 }} 
+              exit={{ opacity: 0, scale: 0.9 }}
+            >
+              <h3 className="event-title">🎲 掷骰结果</h3>
+              <div className="dice-display">
+                {diceShowcase.map((face, index) => (
+                  <motion.div
+                    key={index}
+                    className="dice-face"
+                    initial={{ rotateY: -180, scale: 0.5 }}
+                    animate={{ rotateY: 0, scale: 1 }}
+                    transition={{ delay: index * 0.15, duration: 0.5, type: 'spring' }}
+                  >
+                    {animalMeta[face as AnimalType]?.icon || (face === 'fox' ? '🦊' : '🐺')}
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {visualState === 'breeding' && (
+            <motion.div 
+              key="breeding" 
+              className="stage-content"
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }}
+            >
+              <h3 className="event-title">🌱 动物长大了！</h3>
+              <motion.img src={sproutBurstUrl} alt="成长" className="event-illustration" />
+              <div className="breeding-result">
+                {Object.entries(breedingShowcase).map(([animal, data]) => (
+                  <div key={animal} className="breeding-item">
+                    <span className="animal-icon">{animalMeta[animal as AnimalType].icon}</span>
+                    <span className="breeding-numbers">{data.old} → {data.new}</span>
+                    <span className="breeding-change">+{data.change}</span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {visualState === 'attack' && (
+            <motion.div 
+              key="attack" 
+              className="stage-content"
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }}
+            >
+              <h3 className="event-title warning">⚠️ 危险！</h3>
+              <motion.img 
+                src={foxRunUrl} 
+                alt="狐狸" 
+                className="event-illustration"
+                initial={{ x: 200 }}
+                animate={{ x: 0 }}
+                transition={{ type: 'spring', stiffness: 100 }}
+              />
+              <p className="attack-message">狐狸偷走了 {(attackShowcase as Extract<AttackResult, { type: 'fox' }>).rabbitsLost} 只兔子！</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* 演示控制 */}
+        <div className="demo-bar">
+          <span>演示：</span>
+          {(['idle', 'dice', 'breeding', 'attack'] as const).map(state => (
+            <button
+              key={state}
+              type="button"
+              className={`demo-btn ${visualState === state ? 'active' : ''}`}
+              onClick={() => setVisualState(state)}
+            >
+              {state === 'idle' ? '待机' : state === 'dice' ? '掷骰' : state === 'breeding' ? '繁殖' : '攻击'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 底部操作区 */}
+      <div className="action-dock">
+        <div className="exchange-actions">
+          <ActionButton>🐰×6 → 🐑×1</ActionButton>
+          <ActionButton>🐑×2 → 🐷×1</ActionButton>
+          <ActionButton>🐷×3 → 🐄×1</ActionButton>
+          <ActionButton>🐄×2 → 🐴×1</ActionButton>
+        </div>
+        <div className="protection-actions">
+          <ActionButton variant="guard">🐕 买小狗</ActionButton>
+          <ActionButton variant="guard">🦮 买大狗</ActionButton>
+        </div>
+        <button type="button" className="roll-dice-btn">
+          🎲 掷骰子
+        </button>
+      </div>
+
+      {/* 历史浮窗 */}
+      <AnimatePresence>
+        {showHistory && (
+          <HistoryModal
+            room={room}
+            gameState={gameState}
+            isOpen={showHistory}
+            onClose={() => setShowHistory(false)}
+          />
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
+export default function HomePage() {
+  const [mode, setMode] = useState<GameMode>('classic');
+  const [stage, setStage] = useState<DemoStage>('lobby');
+  const [visualState, setVisualState] = useState<'idle' | 'dice' | 'breeding' | 'attack'>('idle');
+
+  const room = useMemo<Room>(() => ({ ...demoRoom, mode }), [mode]);
+  const gameState = useMemo<GameState>(() => ({ ...demoGameState, mode }), [mode]);
+
+  return (
+    <div className="app-shell">
+      {stage === 'lobby' && (
+        <>
+          <HeroCard mode={mode} setMode={setMode} onCreate={() => setStage('room')} onJoin={() => setStage('game')} />
+        </>
+      )}
+
+      {stage === 'room' && <RoomStage room={room} onStart={() => setStage('game')} onBack={() => setStage('lobby')} />}
+
+      {stage === 'game' && (
+        <GameStage room={room} gameState={gameState} visualState={visualState} setVisualState={setVisualState} onBack={() => setStage('room')} />
+      )}
     </div>
   );
 }

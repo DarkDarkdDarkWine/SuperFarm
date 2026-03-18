@@ -4,6 +4,8 @@
 
 import { create } from 'zustand';
 import type {
+  AttackResult,
+  BreedingResults,
   Room,
   GameState,
   Player,
@@ -38,11 +40,11 @@ interface GameStore {
   diceAnimation: DiceResult[] | null;
   setDiceAnimation: (dice: DiceResult[] | null) => void;
 
-  breedingAnimation: any | null;
-  setBreedingAnimation: (animation: any | null) => void;
+  breedingAnimation: BreedingResults | null;
+  setBreedingAnimation: (animation: BreedingResults | null) => void;
 
-  attackAnimation: any | null;
-  setAttackAnimation: (animation: any | null) => void;
+  attackAnimation: AttackResult | null;
+  setAttackAnimation: (animation: AttackResult | null) => void;
 
   // AI状态
   aiThinking: string | null;

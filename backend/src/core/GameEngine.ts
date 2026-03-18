@@ -8,11 +8,9 @@ import type {
   AnimalType,
   DiceResult,
   GameMode,
-  PlayerAction,
   ExchangeAction,
   BuyProtectionAction,
   ValidationResult,
-  AnimalCollection,
   Bank,
 } from '../../../shared/types/game';
 import { GAME_CONSTANTS } from '../../../shared/types/game';
@@ -27,6 +25,7 @@ export class GameEngine {
     mode: GameMode = 'classic'
   ): GameState {
     const initialAnimals = GAME_CONSTANTS.INITIAL_ANIMALS[mode];
+    const bank: Bank = { ...GAME_CONSTANTS.INITIAL_BANK };
 
     const playerStates: PlayerState[] = players.map(p => ({
       id: p.id,
@@ -37,6 +36,14 @@ export class GameEngine {
       isWinner: false,
     }));
 
+    for (const player of playerStates) {
+      bank.rabbit -= player.animals.rabbit;
+      bank.sheep -= player.animals.sheep;
+      bank.pig -= player.animals.pig;
+      bank.cow -= player.animals.cow;
+      bank.horse -= player.animals.horse;
+    }
+
     return {
       roomId,
       mode,
@@ -44,7 +51,7 @@ export class GameEngine {
       currentPlayerIndex: 0,
       phase: 'exchange',
       players: playerStates,
-      bank: { ...GAME_CONSTANTS.INITIAL_BANK },
+      bank,
       diceResult: [],
       history: [],
     };
@@ -55,7 +62,8 @@ export class GameEngine {
    * 骰子A: rabbit x6, sheep x2, pig x2, horse x1, fox x1
    * 骰子B: rabbit x6, sheep x3, pig x1, cow x1, wolf x1
    */
-  static rollDice(_mode: GameMode): DiceResult[] {
+  static rollDice(mode: GameMode): DiceResult[] {
+    void mode;
     // 骰子A (橙色)
     const diceA = GAME_CONSTANTS.DICE_A[Math.floor(Math.random() * GAME_CONSTANTS.DICE_A.length)];
     // 骰子B (蓝色)
@@ -249,10 +257,10 @@ export class GameEngine {
       }
     });
 
-    const results: Record<
+      const results: Record<
       AnimalType,
       { old: number; new: number; change: number }
-    > = {} as any;
+    > = {} as Record<AnimalType, { old: number; new: number; change: number }>;
 
     // 处理所有动物类型的繁殖
     const animalTypes: AnimalType[] = ['rabbit', 'sheep', 'pig', 'cow', 'horse'];
@@ -282,13 +290,7 @@ export class GameEngine {
         return; // 跳过该动物
       }
 
-      // 繁殖公式: 先累计骰子动物，再计算繁殖后代
-      // 1. 先加上骰子获得的动物
-      const afterDice = currentCount + diceCount;
-      // 2. 再计算繁殖后代 = 配对数
-      const offspring = Math.floor(afterDice / 2);
-      // 3. 总获得 = 骰子动物 + 繁殖后代
-      const totalGain = diceCount + offspring;
+      const totalGain = Math.floor((currentCount + diceCount) / 2);
 
       // 受银行库存限制
       const actualGain = Math.min(totalGain, gameState.bank[animal]);
@@ -338,8 +340,12 @@ export class GameEngine {
       victim.animals.rabbit = 0;
     } else {
       // 休闲模式：减少5只，最少保留1只
-      rabbitsLost = Math.min(victim.animals.rabbit - 1, 5);
-      victim.animals.rabbit = Math.max(1, victim.animals.rabbit - 5);
+      if (victim.animals.rabbit <= 1) {
+        rabbitsLost = 0;
+      } else {
+        rabbitsLost = Math.min(victim.animals.rabbit - 1, 5);
+        victim.animals.rabbit = Math.max(1, victim.animals.rabbit - 5);
+      }
     }
 
     // 归还银行

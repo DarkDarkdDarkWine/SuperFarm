@@ -19,6 +19,10 @@ export class AIService {
     this.apiKey = apiKey;
   }
 
+  updateApiKey(key: string): void {
+    this.apiKey = key;
+  }
+
   /**
    * 过滤游戏状态，实现信息隔离
    */
@@ -83,8 +87,8 @@ export class AIService {
       return {
         playerId: request.playerId,
         actions,
-        reasoning: response.reasoning || '根据当前局势做出决策',
-        confidence: response.confidence || 0.7,
+        reasoning: typeof response.reasoning === 'string' ? response.reasoning : '根据当前局势做出决策',
+        confidence: typeof response.confidence === 'number' ? response.confidence : 0.7,
         thinkingTime,
       };
     } catch (error) {
@@ -105,7 +109,7 @@ export class AIService {
    * 构建AI提示词
    */
   private buildPrompt(request: AIDecisionRequest): string {
-    const { gameView, difficulty, mode } = request;
+    const { gameView, difficulty } = request;
 
     const systemPrompt = this.getSystemPrompt(difficulty);
     const gameStateDesc = this.describeGameState(gameView);
@@ -276,7 +280,7 @@ ${gameStateDesc}
   private async callDeepSeekAPI(
     prompt: string,
     difficulty: AIDifficulty
-  ): Promise<any> {
+  ): Promise<Record<string, unknown>> {
     const temperature = this.getTemperature(difficulty);
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -302,8 +306,18 @@ ${gameStateDesc}
       throw new Error(`DeepSeek API error: ${response.statusText}`);
     }
 
-    const data = await response.json();
-    const content = data.choices[0].message.content;
+    const data = await response.json() as {
+      choices?: Array<{
+        message?: {
+          content?: string;
+        };
+      }>;
+    };
+    const content = data.choices?.[0]?.message?.content;
+
+    if (!content) {
+      throw new Error('DeepSeek API returned an empty response');
+    }
 
     // 尝试解析JSON
     try {
@@ -342,25 +356,31 @@ ${gameStateDesc}
    * 解析AI响应
    */
   private parseResponse(response: any): PlayerAction[] {
-    if (!response.actions || !Array.isArray(response.actions)) {
+    const actions = response.actions;
+
+    if (!Array.isArray(actions)) {
       return [];
     }
 
-    return response.actions.filter((action: any) => {
-      // 基本验证
-      if (!action.type) return false;
+    return actions.filter((action: unknown): action is PlayerAction => {
+      if (!action || typeof action !== 'object') return false;
 
-      if (action.type === 'exchange') {
+      const candidate = action as Record<string, unknown>;
+
+      // 基本验证
+      if (typeof candidate.type !== 'string') return false;
+
+      if (candidate.type === 'exchange') {
         return (
-          action.from &&
-          action.to &&
-          typeof action.fromCount === 'number' &&
-          typeof action.toCount === 'number'
+          typeof candidate.from === 'string' &&
+          typeof candidate.to === 'string' &&
+          typeof candidate.fromCount === 'number' &&
+          typeof candidate.toCount === 'number'
         );
       }
 
-      if (action.type === 'buy_protection') {
-        return action.protection === 'smallDog' || action.protection === 'bigDog';
+      if (candidate.type === 'buy_protection') {
+        return candidate.protection === 'smallDog' || candidate.protection === 'bigDog';
       }
 
       return false;
