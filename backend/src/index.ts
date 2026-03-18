@@ -21,8 +21,12 @@ const httpServer = createServer();
 const gameServer = new GameServer(httpServer, apiKey ?? '');
 
 // 再创建 Express app（持有 gameServer 引用），作为 HTTP request 处理器
+// 跳过 /socket.io/ 路径——由 Socket.io 自己处理，避免双重响应
 const app = createExpressApp(gameServer);
-httpServer.on('request', app);
+httpServer.on('request', (req, res) => {
+  if (req.url?.startsWith('/socket.io')) return;
+  app(req as import('express').Request, res as import('express').Response);
+});
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
