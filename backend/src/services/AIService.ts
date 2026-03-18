@@ -32,15 +32,15 @@ export const PROVIDER_CONFIGS: Record<AIProvider, {
     label: 'Kimi',
   },
   minimax: {
-    baseUrl: 'https://api.minimax.chat/v1',
-    testModel: 'MiniMax-Text-01',
-    models: ['MiniMax-Text-01', 'abab6.5s-chat', 'abab5.5s-chat'],
+    baseUrl: 'https://api.minimaxi.com/v1',
+    testModel: 'MiniMax-M2.5',
+    models: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M2.1', 'MiniMax-M2'],
     label: 'MiniMax',
   },
   zhipu: {
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    testModel: 'glm-4-flash',
-    models: ['glm-4-flash', 'glm-4', 'glm-4-plus', 'glm-3-turbo'],
+    testModel: 'glm-4-flash-250414',
+    models: ['glm-4-plus', 'glm-4-air-250414', 'glm-4-airx', 'glm-4-flashx', 'glm-4-flash-250414', 'glm-4-long'],
     label: '智谱',
   },
 };

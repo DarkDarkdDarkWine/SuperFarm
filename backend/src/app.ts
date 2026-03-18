@@ -86,23 +86,28 @@ export function createExpressApp(
       }
 
       // 2. 获取可用模型列表
+      // DeepSeek 和 Kimi 支持 GET /models（标准 OpenAI 格式）
+      // 智谱和 MiniMax 没有此接口，直接使用硬编码列表
       let models: string[] = providerConfig.models;
-      try {
-        const modelsResponse = await fetch(`${providerConfig.baseUrl}/models`, {
-          headers: { Authorization: `Bearer ${key}` },
-        });
-        if (modelsResponse.ok) {
-          const modelsData = await modelsResponse.json() as { data?: Array<{ id: string; object?: string }> };
-          if (Array.isArray(modelsData.data) && modelsData.data.length > 0) {
-            const fetched = modelsData.data
-              .filter(m => !m.object || m.object === 'model')
-              .map(m => m.id)
-              .filter(id => !id.includes('embed') && !id.includes('rerank') && !id.includes('audio') && !id.includes('tts') && !id.includes('vision') && !id.includes('image'));
-            if (fetched.length > 0) models = fetched;
+      const supportsModelsList: AIProvider[] = ['deepseek', 'kimi'];
+      if (supportsModelsList.includes(provider)) {
+        try {
+          const modelsResponse = await fetch(`${providerConfig.baseUrl}/models`, {
+            headers: { Authorization: `Bearer ${key}` },
+          });
+          if (modelsResponse.ok) {
+            const modelsData = await modelsResponse.json() as { data?: Array<{ id: string; object?: string }> };
+            if (Array.isArray(modelsData.data) && modelsData.data.length > 0) {
+              const fetched = modelsData.data
+                .filter(m => !m.object || m.object === 'model')
+                .map(m => m.id)
+                .filter(id => !id.includes('embed') && !id.includes('rerank') && !id.includes('audio') && !id.includes('tts') && !id.includes('vision') && !id.includes('image'));
+              if (fetched.length > 0) models = fetched;
+            }
           }
+        } catch {
+          // 失败时回退到硬编码列表
         }
-      } catch {
-        // /models 失败时回退到硬编码列表，不影响主流程
       }
 
       res.json({ success: true, models });
