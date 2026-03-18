@@ -73,18 +73,13 @@ export class GameEngine {
   }
 
   /**
-   * 计算繁殖（修正后的标准算法）
-   * 规则：
-   * 1. 保留现有动物
-   * 2. 加上骰子获得的动物
-   * 3. 繁殖后代 = floor(min(现有, 骰子) / 2)（需要配对才能繁殖）
-   * 4. 最终数量 = 现有 + 骰子 + 后代
+   * 计算繁殖获得数量（标准算法）
+   * 规则：gain = floor((现有 + 骰子) / 2)
+   * 最终数量由调用方计算：currentCount + gain
+   * 注意：此方法不处理"无种不繁殖"和银行库存限制，这些由 processBreeding 处理
    */
   static calculateBreeding(currentCount: number, diceCount: number): number {
-    // 繁殖需要配对：取现有和骰子的较小值，除以2得到后代数量
-    const offspring = Math.floor(Math.min(currentCount, diceCount) / 2);
-    // 最终数量 = 现有 + 骰子 + 后代
-    return currentCount + diceCount + offspring;
+    return Math.floor((currentCount + diceCount) / 2);
   }
 
   /**
@@ -171,6 +166,7 @@ export class GameEngine {
 
   /**
    * 验证购买防护
+   * 规则：1只羊 → 1只小狗（防御狐狸），1只牛 → 1只大狗（防御狼）
    */
   static validateBuyProtection(
     player: PlayerState,
@@ -189,17 +185,17 @@ export class GameEngine {
 
     // 检查购买代价
     if (protection === 'smallDog') {
-      if (player.animals.rabbit < 1) {
-        return {
-          valid: false,
-          reason: '需要1只兔子购买小狗',
-        };
-      }
-    } else if (protection === 'bigDog') {
       if (player.animals.sheep < 1) {
         return {
           valid: false,
-          reason: '需要1只羊购买大狗',
+          reason: '需要1只羊购买小狗',
+        };
+      }
+    } else if (protection === 'bigDog') {
+      if (player.animals.cow < 1) {
+        return {
+          valid: false,
+          reason: '需要1只牛购买大狗',
         };
       }
     }
@@ -218,13 +214,13 @@ export class GameEngine {
     const { protection } = action;
 
     if (protection === 'smallDog') {
-      player.animals.rabbit -= 1;
-      bank.rabbit += 1;
+      player.animals.sheep -= 1;
+      bank.sheep += 1;
       player.protection.smallDog += 1;
       bank.smallDog -= 1;
     } else if (protection === 'bigDog') {
-      player.animals.sheep -= 1;
-      bank.sheep += 1;
+      player.animals.cow -= 1;
+      bank.cow += 1;
       player.protection.bigDog += 1;
       bank.bigDog -= 1;
     }
@@ -280,8 +276,8 @@ export class GameEngine {
       }
 
       // ⚠️ 关键规则2: "有种才能繁殖"
-      // 如果玩家没有该动物，且骰子只投出1个，则不获得任何东西
-      if (currentCount === 0 && diceCount < 2) {
+      // 玩家没有该动物就无法繁殖，无论骰子投出几个
+      if (currentCount === 0) {
         results[animal] = {
           old: currentCount,
           new: currentCount,
@@ -290,7 +286,7 @@ export class GameEngine {
         return; // 跳过该动物
       }
 
-      const totalGain = Math.floor((currentCount + diceCount) / 2);
+      const totalGain = GameEngine.calculateBreeding(currentCount, diceCount);
 
       // 受银行库存限制
       const actualGain = Math.min(totalGain, gameState.bank[animal]);
@@ -369,17 +365,20 @@ export class GameEngine {
       return { blocked: true, animalsLost: {} };
     }
 
-    // 失去所有羊、猪、牛
+    // 失去所有兔子、羊、猪、牛（马和小狗保留）
     const animalsLost = {
+      rabbit: victim.animals.rabbit,
       sheep: victim.animals.sheep,
       pig: victim.animals.pig,
       cow: victim.animals.cow,
     };
 
+    bank.rabbit += victim.animals.rabbit;
     bank.sheep += victim.animals.sheep;
     bank.pig += victim.animals.pig;
     bank.cow += victim.animals.cow;
 
+    victim.animals.rabbit = 0;
     victim.animals.sheep = 0;
     victim.animals.pig = 0;
     victim.animals.cow = 0;

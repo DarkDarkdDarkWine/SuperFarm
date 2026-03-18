@@ -399,7 +399,11 @@ export class GameServer {
 
     this.io.to(roomId).emit('game:dice_rolled', diceResult);
 
-    // 处理繁殖
+    // 阶段3: 先处理灾难（规则要求灾难在繁殖之前结算）
+    gameState.phase = 'attacking';
+    await this.processAttacks(roomId, gameState);
+
+    // 阶段4: 再处理繁殖
     gameState.phase = 'breeding';
     const breedingResults = GameEngine.processBreeding(gameState);
 
@@ -412,10 +416,6 @@ export class GameServer {
     });
 
     this.io.to(roomId).emit('game:breeding', breedingResults);
-
-    // 处理攻击
-    gameState.phase = 'attacking';
-    await this.processAttacks(roomId, gameState);
 
     // 检查胜利
     gameState.phase = 'victory_check';

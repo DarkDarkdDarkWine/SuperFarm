@@ -177,7 +177,8 @@ describe('GameServer internals', () => {
     const room = roomManager.createRoom({ name: 'Room', mode: 'classic', maxPlayers: 2 }, 'player-1', 'Alice');
     roomManager.joinRoom(room.id, 'player-2', 'Bob');
     const gameState = createGameState({ roomId: room.id });
-    gameState.players[0].animals.rabbit = 0;
+    // smallDog now costs 1 sheep; player has sheep:0 → should reject
+    gameState.players[0].animals.sheep = 0;
     roomManager.startGame(room.id, gameState);
 
     const callback = vi.fn();
@@ -186,13 +187,15 @@ describe('GameServer internals', () => {
       protection: 'smallDog',
     }, callback);
 
-    expect(callback).toHaveBeenCalledWith({ success: false, error: '需要1只兔子购买小狗' });
+    expect(callback).toHaveBeenCalledWith({ success: false, error: '需要1只羊购买小狗' });
   });
 
   it('rejects invalid protection buys and accepts valid ones', async () => {
     const room = roomManager.createRoom({ name: 'Room', mode: 'classic', maxPlayers: 2 }, 'player-1', 'Alice');
     roomManager.joinRoom(room.id, 'player-2', 'Bob');
     const gameState = createGameState();
+    // smallDog costs 1 sheep; give player-1 a sheep so the purchase succeeds
+    gameState.players[0].animals.sheep = 1;
     roomManager.startGame(room.id, gameState);
     const callback = vi.fn();
 
@@ -209,6 +212,7 @@ describe('GameServer internals', () => {
     }, callback);
     expect(callback).toHaveBeenCalledWith({ success: true });
     expect(gameState.players[0].protection.smallDog).toBe(1);
+    expect(gameState.players[0].animals.sheep).toBe(0); // sheep consumed
     expect(emitSpy).toHaveBeenCalledWith('game:state', gameState);
   });
 
@@ -304,7 +308,8 @@ describe('GameServer internals', () => {
           id: aiId,
           name: 'AI',
           type: 'ai',
-          animals: { rabbit: 6, sheep: 1, pig: 0, cow: 0, horse: 0 },
+          // bigDog costs 1 cow, give AI a cow so the purchase succeeds
+          animals: { rabbit: 6, sheep: 1, pig: 0, cow: 1, horse: 0 },
         }),
       ],
     });
@@ -327,8 +332,9 @@ describe('GameServer internals', () => {
 
     expect(emitSpy).toHaveBeenCalledWith('ai:thinking', aiId);
     expect(emitSpy).toHaveBeenCalledWith('ai:decision', aiId, aiService.decision.actions);
-    expect(gameState.players[1].animals.rabbit).toBe(0);
-    expect(gameState.players[1].animals.sheep).toBe(1);
+    expect(gameState.players[1].animals.rabbit).toBe(0);   // 6 rabbits exchanged
+    expect(gameState.players[1].animals.sheep).toBe(2);    // 1 original + 1 from exchange
+    expect(gameState.players[1].animals.cow).toBe(0);      // 1 cow consumed for bigDog
     expect(gameState.players[1].protection.bigDog).toBe(1);
     expect(handleRollDiceSpy).toHaveBeenCalledWith(room.id, aiId, expect.any(Function));
 

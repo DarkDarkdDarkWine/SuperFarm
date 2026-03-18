@@ -50,7 +50,7 @@ export function createExpressApp(
     res.json({ success: true });
   });
 
-  // ── 测试 AI API key 连通性 ────────────────────────────────────────────────
+  // ── 测试 AI API key 连通性，并获取可用模型列表 ───────────────────────────
   app.post('/api/config/test', async (req, res) => {
     const { provider: rawProvider, apiKey } = req.body as { provider?: unknown; apiKey?: unknown };
     if (typeof apiKey !== 'string' || !apiKey.trim()) {
@@ -63,7 +63,8 @@ export function createExpressApp(
       : 'deepseek';
     const providerConfig = PROVIDER_CONFIGS[provider];
     try {
-      const response = await fetch(`${providerConfig.baseUrl}/chat/completions`, {
+      // 1. 验证 key 是否有效（发送一个最小的请求）
+      const testResponse = await fetch(`${providerConfig.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -75,15 +76,36 @@ export function createExpressApp(
           max_tokens: 1,
         }),
       });
-      if (response.status === 401) {
+      if (testResponse.status === 401) {
         res.json({ success: false, error: 'API Key 无效或已过期' });
         return;
       }
-      if (!response.ok) {
-        res.json({ success: false, error: `${providerConfig.label} 返回错误: ${response.status}` });
+      if (!testResponse.ok && testResponse.status !== 400) {
+        res.json({ success: false, error: `${providerConfig.label} 返回错误: ${testResponse.status}` });
         return;
       }
-      res.json({ success: true, models: providerConfig.models });
+
+      // 2. 获取可用模型列表
+      let models: string[] = providerConfig.models;
+      try {
+        const modelsResponse = await fetch(`${providerConfig.baseUrl}/models`, {
+          headers: { Authorization: `Bearer ${key}` },
+        });
+        if (modelsResponse.ok) {
+          const modelsData = await modelsResponse.json() as { data?: Array<{ id: string; object?: string }> };
+          if (Array.isArray(modelsData.data) && modelsData.data.length > 0) {
+            const fetched = modelsData.data
+              .filter(m => !m.object || m.object === 'model')
+              .map(m => m.id)
+              .filter(id => !id.includes('embed') && !id.includes('rerank') && !id.includes('audio') && !id.includes('tts') && !id.includes('vision') && !id.includes('image'));
+            if (fetched.length > 0) models = fetched;
+          }
+        }
+      } catch {
+        // /models 失败时回退到硬编码列表，不影响主流程
+      }
+
+      res.json({ success: true, models });
     } catch {
       res.json({ success: false, error: `无法连接到 ${providerConfig.label}，请检查网络` });
     }

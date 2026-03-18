@@ -42,8 +42,11 @@ function jsonRequest(
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
-function makeMockGameServer(): AppGameServer & { updateApiKey: ReturnType<typeof vi.fn> } {
-  return { updateApiKey: vi.fn() };
+function makeMockGameServer(): AppGameServer & {
+  updateApiKey: ReturnType<typeof vi.fn>;
+  updateProvider: ReturnType<typeof vi.fn>;
+} {
+  return { updateApiKey: vi.fn(), updateProvider: vi.fn() };
 }
 
 function mockFetchOk() {
@@ -81,11 +84,12 @@ describe('POST /api/config', () => {
 
   beforeEach(() => {
     mockGameServer.updateApiKey.mockClear();
+    mockGameServer.updateProvider.mockClear();
   });
 
   it('accepts a valid key and calls updateApiKey', async () => {
     const { status, body } = await jsonRequest(httpServer, 'POST', '/api/config', {
-      deepseekApiKey: 'sk-valid-key',
+      apiKey: 'sk-valid-key',
     });
 
     expect(status).toBe(200);
@@ -96,7 +100,7 @@ describe('POST /api/config', () => {
 
   it('trims whitespace from the key before calling updateApiKey', async () => {
     const { status, body } = await jsonRequest(httpServer, 'POST', '/api/config', {
-      deepseekApiKey: '  sk-padded  ',
+      apiKey: '  sk-padded  ',
     });
 
     expect(status).toBe(200);
@@ -104,7 +108,7 @@ describe('POST /api/config', () => {
     expect(mockGameServer.updateApiKey).toHaveBeenCalledWith('sk-padded');
   });
 
-  it('returns 400 when deepseekApiKey is missing', async () => {
+  it('returns 400 when apiKey is missing', async () => {
     const { status, body } = await jsonRequest(httpServer, 'POST', '/api/config', {});
 
     expect(status).toBe(400);
@@ -113,9 +117,9 @@ describe('POST /api/config', () => {
     expect(mockGameServer.updateApiKey).not.toHaveBeenCalled();
   });
 
-  it('returns 400 when deepseekApiKey is an empty string', async () => {
+  it('returns 400 when apiKey is an empty string', async () => {
     const { status, body } = await jsonRequest(httpServer, 'POST', '/api/config', {
-      deepseekApiKey: '',
+      apiKey: '',
     });
 
     expect(status).toBe(400);
@@ -123,9 +127,9 @@ describe('POST /api/config', () => {
     expect(mockGameServer.updateApiKey).not.toHaveBeenCalled();
   });
 
-  it('returns 400 when deepseekApiKey is whitespace-only', async () => {
+  it('returns 400 when apiKey is whitespace-only', async () => {
     const { status, body } = await jsonRequest(httpServer, 'POST', '/api/config', {
-      deepseekApiKey: '   ',
+      apiKey: '   ',
     });
 
     expect(status).toBe(400);
@@ -133,9 +137,9 @@ describe('POST /api/config', () => {
     expect(mockGameServer.updateApiKey).not.toHaveBeenCalled();
   });
 
-  it('returns 400 when deepseekApiKey is not a string', async () => {
+  it('returns 400 when apiKey is not a string', async () => {
     const { status, body } = await jsonRequest(httpServer, 'POST', '/api/config', {
-      deepseekApiKey: 12345,
+      apiKey: 12345,
     });
 
     expect(status).toBe(400);
@@ -159,27 +163,35 @@ describe('POST /api/config/test', () => {
     await new Promise<void>(resolve => httpServer.close(() => resolve()));
   });
 
-  it('returns success when DeepSeek responds 200', async () => {
+  beforeEach(() => {
+    vi.mocked(fetch).mockReset();
+  });
+
+  it('returns success when provider responds 200 (falls back to hardcoded models if /models fails)', async () => {
+    // First call: chat completions (ok), second call: /models (fails → fallback)
     mockFetchOk();
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('no models'));
 
     const { status, body } = await jsonRequest(httpServer, 'POST', '/api/config/test', {
-      deepseekApiKey: 'sk-real-key',
+      apiKey: 'sk-real-key',
+      provider: 'deepseek',
     });
 
     expect(status).toBe(200);
-    expect(body).toEqual({ success: true });
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.models)).toBe(true);
 
     const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect(url).toContain('deepseek.com');
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer sk-real-key');
   });
 
-  it('returns failure with message when DeepSeek responds 401', async () => {
+  it('returns failure with message when provider responds 401', async () => {
     mockFetch401();
 
     const { status, body } = await jsonRequest(httpServer, 'POST', '/api/config/test', {
-      deepseekApiKey: 'sk-bad-key',
+      apiKey: 'sk-bad-key',
+      provider: 'deepseek',
     });
 
     expect(status).toBe(200);
@@ -188,11 +200,12 @@ describe('POST /api/config/test', () => {
     expect(body.error as string).toMatch(/无效|过期/);
   });
 
-  it('returns failure with status code when DeepSeek responds non-401 error', async () => {
+  it('returns failure with status code when provider responds non-401 error', async () => {
     mockFetchError(500);
 
     const { body } = await jsonRequest(httpServer, 'POST', '/api/config/test', {
-      deepseekApiKey: 'sk-key',
+      apiKey: 'sk-key',
+      provider: 'deepseek',
     });
 
     expect(body.success).toBe(false);
@@ -203,7 +216,8 @@ describe('POST /api/config/test', () => {
     mockFetchNetworkError();
 
     const { status, body } = await jsonRequest(httpServer, 'POST', '/api/config/test', {
-      deepseekApiKey: 'sk-key',
+      apiKey: 'sk-key',
+      provider: 'deepseek',
     });
 
     expect(status).toBe(200);
@@ -211,7 +225,7 @@ describe('POST /api/config/test', () => {
     expect(typeof body.error).toBe('string');
   });
 
-  it('returns 400 when deepseekApiKey is missing', async () => {
+  it('returns 400 when apiKey is missing', async () => {
     const { status, body } = await jsonRequest(httpServer, 'POST', '/api/config/test', {});
 
     expect(status).toBe(400);
@@ -219,9 +233,9 @@ describe('POST /api/config/test', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('returns 400 when deepseekApiKey is empty', async () => {
+  it('returns 400 when apiKey is empty', async () => {
     const { status, body } = await jsonRequest(httpServer, 'POST', '/api/config/test', {
-      deepseekApiKey: '  ',
+      apiKey: '  ',
     });
 
     expect(status).toBe(400);
@@ -229,11 +243,13 @@ describe('POST /api/config/test', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('trims the key before sending to DeepSeek', async () => {
+  it('trims the key before sending to provider', async () => {
     mockFetchOk();
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('no models'));
 
     await jsonRequest(httpServer, 'POST', '/api/config/test', {
-      deepseekApiKey: '  sk-trimmed  ',
+      apiKey: '  sk-trimmed  ',
+      provider: 'deepseek',
     });
 
     const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];

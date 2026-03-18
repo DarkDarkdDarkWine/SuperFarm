@@ -150,9 +150,17 @@ describe('GameEngine', () => {
   });
 
   describe('calculateBreeding', () => {
-    it('returns current animals plus die results plus offspring pairs', () => {
-      expect(GameEngine.calculateBreeding(1, 1)).toBe(2);
-      expect(GameEngine.calculateBreeding(2, 2)).toBe(5);
+    it('returns gain = floor((current + dice) / 2)', () => {
+      // (1+1)/2 = 1 → player gains 1, ends with 2
+      expect(GameEngine.calculateBreeding(1, 1)).toBe(1);
+      // (2+2)/2 = 2 → player gains 2, ends with 4
+      expect(GameEngine.calculateBreeding(2, 2)).toBe(2);
+      // (3+2)/2 = 2 → player gains 2, ends with 5
+      expect(GameEngine.calculateBreeding(3, 2)).toBe(2);
+      // (0+1)/2 = 0 → no seed, no gain
+      expect(GameEngine.calculateBreeding(0, 1)).toBe(0);
+      // (0+2)/2 = 1 → 纯数学结果，但实际游戏中 processBreeding 会因无种跳过
+      expect(GameEngine.calculateBreeding(0, 2)).toBe(1);
     });
   });
 
@@ -180,8 +188,9 @@ describe('GameEngine', () => {
 
   describe('buyProtection', () => {
     it('validates and executes small-dog and big-dog purchases', () => {
+      // smallDog costs 1 sheep, bigDog costs 1 cow (per rules)
       const player = createPlayer({
-        animals: { rabbit: 1, sheep: 1, pig: 0, cow: 0, horse: 0 },
+        animals: { rabbit: 0, sheep: 1, pig: 0, cow: 1, horse: 0 },
       });
       const bank = createBank();
 
@@ -197,9 +206,9 @@ describe('GameEngine', () => {
         protection: 'smallDog',
       });
 
-      expect(player.animals.rabbit).toBe(0);
+      expect(player.animals.sheep).toBe(0);   // 1 sheep consumed
       expect(player.protection.smallDog).toBe(1);
-      expect(bank.rabbit).toBe(61);
+      expect(bank.sheep).toBe(25);             // sheep returned to bank
       expect(bank.smallDog).toBe(3);
 
       expect(
@@ -214,9 +223,9 @@ describe('GameEngine', () => {
         protection: 'bigDog',
       });
 
-      expect(player.animals.sheep).toBe(0);
+      expect(player.animals.cow).toBe(0);     // 1 cow consumed
       expect(player.protection.bigDog).toBe(1);
-      expect(bank.sheep).toBe(25);
+      expect(bank.cow).toBe(13);              // cow returned to bank
       expect(bank.bigDog).toBe(1);
     });
 
@@ -259,7 +268,7 @@ describe('GameEngine', () => {
       expect(gameState.bank.rabbit).toBe(59);
     });
 
-    it('allows breeding from two dice when the player starts with none', () => {
+    it('does not grant sheep when player has none, even with double dice', () => {
       const gameState = createGameState({
         players: [createPlayer()],
         diceResult: ['sheep', 'sheep'],
@@ -267,9 +276,9 @@ describe('GameEngine', () => {
 
       const result = GameEngine.processBreeding(gameState);
 
-      expect(result.sheep).toEqual({ old: 0, new: 1, change: 1 });
-      expect(gameState.players[0].animals.sheep).toBe(1);
-      expect(gameState.bank.sheep).toBe(23);
+      expect(result.sheep).toEqual({ old: 0, new: 0, change: 0 });
+      expect(gameState.players[0].animals.sheep).toBe(0);
+      expect(gameState.bank.sheep).toBe(24);
     });
 
     it('respects bank stock limits', () => {
@@ -334,22 +343,24 @@ describe('GameEngine', () => {
       expect(victim.animals.sheep).toBe(2);
     });
 
-    it('returns sheep, pigs and cows to the bank when unblocked', () => {
+    it('returns rabbits, sheep, pigs and cows to the bank when unblocked (horse spared)', () => {
       const victim = createPlayer({
         animals: { rabbit: 2, sheep: 2, pig: 1, cow: 1, horse: 1 },
       });
-      const bank = createBank({ sheep: 10, pig: 10, cow: 10 });
+      const bank = createBank({ rabbit: 50, sheep: 10, pig: 10, cow: 10 });
 
       const result = GameEngine.processWolfAttack(victim, victim, bank);
 
       expect(result).toEqual({
         blocked: false,
-        animalsLost: { sheep: 2, pig: 1, cow: 1 },
+        animalsLost: { rabbit: 2, sheep: 2, pig: 1, cow: 1 },
       });
-      expect(victim.animals.rabbit).toBe(2);
+      expect(victim.animals.rabbit).toBe(0);   // wolf eats rabbits
       expect(victim.animals.sheep).toBe(0);
       expect(victim.animals.pig).toBe(0);
       expect(victim.animals.cow).toBe(0);
+      expect(victim.animals.horse).toBe(1);     // horse spared
+      expect(bank.rabbit).toBe(52);
       expect(bank.sheep).toBe(12);
       expect(bank.pig).toBe(11);
       expect(bank.cow).toBe(11);
