@@ -14,7 +14,16 @@ const MODES: Array<{ id: GameMode; emoji: string; title: string; desc: string; c
   { id: 'hard', emoji: '⚡', title: '挑战模式', desc: '狐狸狼更凶猛，适合高手', color: '#FCE4EC' },
 ];
 
-const AI_NAMES = ['稳重老羊', '聪明小猪', '天才马儿', '机器兔兔'];
+const AI_NAME_POOL = [
+  '农夫威廉', '牧场主罗斯', '铁犁汉斯', '麦田守望者',
+  '老猎人托比', '森林骑士', '谷仓伯爵', '荒野行者',
+];
+
+/** 从名字池中选一个当前未被使用的名字 */
+function pickAiName(usedNames: (string | undefined)[]): string {
+  const used = new Set(usedNames.filter(Boolean));
+  return AI_NAME_POOL.find(n => !used.has(n)) ?? `AI玩家${Math.floor(Math.random() * 99) + 1}`;
+}
 
 type PingStatus = 'checking' | 'ok' | 'err';
 
@@ -76,7 +85,7 @@ export default function SetupPage({ onStart }: { onStart: (config: GameConfig) =
   const { backend, ai, recheckAi } = useStatusPing();
   const [players, setPlayers] = useState<(PlayerConfig | null)[]>([
     { name: '玩家1', type: 'human' },
-    { name: AI_NAMES[0], type: 'ai', difficulty: 'easy' },
+    { name: pickAiName(['玩家1']), type: 'ai', difficulty: 'easy' },
     null,
     null,
   ]);
@@ -90,11 +99,14 @@ export default function SetupPage({ onStart }: { onStart: (config: GameConfig) =
   };
 
   const addSlot = (index: number) => {
-    setPlayers(prev => prev.map((p, i) => i !== index ? p : {
-      name: index === 0 ? '玩家1' : index < 3 ? `玩家${index + 1}` : AI_NAMES[index],
-      type: index > 0 ? 'ai' : 'human',
-      difficulty: 'easy',
-    }));
+    setPlayers(prev => {
+      const usedNames = prev.map(p => p?.name);
+      return prev.map((p, i) => i !== index ? p : {
+        name: index === 0 ? '玩家1' : index > 0 ? pickAiName(usedNames) : `玩家${index + 1}`,
+        type: index > 0 ? 'ai' : 'human',
+        difficulty: 'easy' as const,
+      });
+    });
   };
 
   const removeSlot = (index: number) => {
@@ -103,9 +115,10 @@ export default function SetupPage({ onStart }: { onStart: (config: GameConfig) =
   };
 
   const toggleType = (index: number, player: PlayerConfig) => {
+    const usedNames = players.map((p, i) => i === index ? undefined : p?.name);
     updatePlayer(index, {
       type: player.type === 'human' ? 'ai' : 'human',
-      name: player.type === 'human' ? AI_NAMES[index] : `玩家${index + 1}`,
+      name: player.type === 'human' ? pickAiName(usedNames) : `玩家${index + 1}`,
       difficulty: 'easy',
     });
   };
