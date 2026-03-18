@@ -4,10 +4,13 @@
 
 import express from 'express';
 import cors from 'cors';
+import { PROVIDER_CONFIGS } from './services/AIService';
+import type { AIProvider } from './services/AIService';
 
 // Minimal interface so tests can pass a simple mock
 export interface AppGameServer {
   updateApiKey(key: string): void;
+  updateProvider(provider: AIProvider, model: string): void;
 }
 
 export function createExpressApp(
@@ -30,31 +33,44 @@ export function createExpressApp(
 
   // ── 更新 AI API key（热更新，无需重启服务）───────────────────────────────
   app.post('/api/config', (req, res) => {
-    const { deepseekApiKey } = req.body as { deepseekApiKey?: unknown };
-    if (typeof deepseekApiKey !== 'string' || !deepseekApiKey.trim()) {
-      res.status(400).json({ success: false, error: 'deepseekApiKey is required' });
+    const { provider: rawProvider, apiKey, model: rawModel } = req.body as { provider?: unknown; apiKey?: unknown; model?: unknown };
+    if (typeof apiKey !== 'string' || !apiKey.trim()) {
+      res.status(400).json({ success: false, error: 'apiKey is required' });
       return;
     }
-    gameServer.updateApiKey(deepseekApiKey.trim());
+    const key = apiKey.trim();
+    const provider: AIProvider = (typeof rawProvider === 'string' && rawProvider in PROVIDER_CONFIGS)
+      ? rawProvider as AIProvider
+      : 'deepseek';
+    const model: string = (typeof rawModel === 'string' && rawModel.trim())
+      ? rawModel.trim()
+      : PROVIDER_CONFIGS[provider].testModel;
+    gameServer.updateApiKey(key);
+    gameServer.updateProvider(provider, model);
     res.json({ success: true });
   });
 
   // ── 测试 AI API key 连通性 ────────────────────────────────────────────────
   app.post('/api/config/test', async (req, res) => {
-    const { deepseekApiKey } = req.body as { deepseekApiKey?: unknown };
-    if (typeof deepseekApiKey !== 'string' || !deepseekApiKey.trim()) {
-      res.status(400).json({ success: false, error: 'deepseekApiKey is required' });
+    const { provider: rawProvider, apiKey } = req.body as { provider?: unknown; apiKey?: unknown };
+    if (typeof apiKey !== 'string' || !apiKey.trim()) {
+      res.status(400).json({ success: false, error: 'apiKey is required' });
       return;
     }
+    const key = apiKey.trim();
+    const provider: AIProvider = (typeof rawProvider === 'string' && rawProvider in PROVIDER_CONFIGS)
+      ? rawProvider as AIProvider
+      : 'deepseek';
+    const providerConfig = PROVIDER_CONFIGS[provider];
     try {
-      const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      const response = await fetch(`${providerConfig.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${deepseekApiKey.trim()}`,
+          Authorization: `Bearer ${key}`,
         },
         body: JSON.stringify({
-          model: 'deepseek-chat',
+          model: providerConfig.testModel,
           messages: [{ role: 'user', content: 'hi' }],
           max_tokens: 1,
         }),
@@ -64,12 +80,12 @@ export function createExpressApp(
         return;
       }
       if (!response.ok) {
-        res.json({ success: false, error: `DeepSeek 返回错误: ${response.status}` });
+        res.json({ success: false, error: `${providerConfig.label} 返回错误: ${response.status}` });
         return;
       }
-      res.json({ success: true });
+      res.json({ success: true, models: providerConfig.models });
     } catch {
-      res.json({ success: false, error: '无法连接到 DeepSeek，请检查网络' });
+      res.json({ success: false, error: `无法连接到 ${providerConfig.label}，请检查网络` });
     }
   });
 

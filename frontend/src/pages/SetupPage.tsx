@@ -281,36 +281,53 @@ export default function SetupPage({ onStart }: { onStart: (config: GameConfig) =
 
 // ── Settings modal ─────────────────────────────────────────────────────────
 
+type AIProvider = 'deepseek' | 'kimi' | 'minimax' | 'zhipu';
+
+const PROVIDERS: { id: AIProvider; label: string; placeholder: string }[] = [
+  { id: 'deepseek', label: 'DeepSeek', placeholder: 'sk-...' },
+  { id: 'kimi',     label: 'Kimi',     placeholder: 'sk-...' },
+  { id: 'minimax',  label: 'MiniMax',  placeholder: '填入 API Key' },
+  { id: 'zhipu',    label: '智谱',     placeholder: '填入 API Key' },
+];
+
 function SettingsModal({ onClose, onKeySaved }: { onClose: () => void; onKeySaved: () => void }) {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('deepseek_api_key') ?? '');
+  const [provider, setProvider] = useState<AIProvider>(() =>
+    (localStorage.getItem('ai_provider') as AIProvider) ?? 'deepseek'
+  );
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('ai_api_key') ?? '');
   const [showKey, setShowKey] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'ok' | 'err'>('idle');
   const [testError, setTestError] = useState('');
+  const [models, setModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const resetTest = () => {
+    setTestStatus('idle');
+    setTestError('');
+    setModels([]);
+    setSelectedModel('');
+  };
 
   const testKey = async () => {
     const key = apiKey.trim();
     if (!key) return;
     setTestStatus('testing');
     setTestError('');
+    setModels([]);
+    setSelectedModel('');
     try {
       const res = await fetch(`${BACKEND_URL}/api/config/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deepseekApiKey: key }),
+        body: JSON.stringify({ provider, apiKey: key }),
       });
-      const data = await res.json() as { success: boolean; error?: string };
+      const data = await res.json() as { success: boolean; error?: string; models?: string[] };
       if (data.success) {
         setTestStatus('ok');
-        // 测试通过即保存
-        await fetch(`${BACKEND_URL}/api/config`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deepseekApiKey: key }),
-        });
-        localStorage.setItem('deepseek_api_key', key);
-        onKeySaved();
-        setTimeout(onClose, 800);
+        const mList = data.models ?? [];
+        setModels(mList);
+        setSelectedModel(mList[0] ?? '');
       } else {
         setTestStatus('err');
         setTestError(data.error ?? '未知错误');
@@ -321,10 +338,25 @@ function SettingsModal({ onClose, onKeySaved }: { onClose: () => void; onKeySave
     }
   };
 
-  const onKeyChange = (val: string) => {
-    setApiKey(val);
-    setTestStatus('idle');
-    setTestError('');
+  const save = async () => {
+    const key = apiKey.trim();
+    if (!key || !selectedModel) return;
+    try {
+      await fetch(`${BACKEND_URL}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, apiKey: key, model: selectedModel }),
+      });
+      localStorage.setItem('ai_provider', provider);
+      localStorage.setItem('ai_api_key', key);
+      localStorage.setItem('ai_model', selectedModel);
+      // 兼容旧版指示灯检测用的 key
+      localStorage.setItem('deepseek_api_key', key);
+      onKeySaved();
+      setTimeout(onClose, 600);
+    } catch {
+      setTestError('保存失败，请检查服务器');
+    }
   };
 
   return (
@@ -343,21 +375,35 @@ function SettingsModal({ onClose, onKeySaved }: { onClose: () => void; onKeySave
         transition={{ type: 'spring', stiffness: 300, damping: 26 }}
       >
         <div className="settings-header">
-          <span>⚙️ 设置</span>
+          <span>⚙️ AI 服务设置</span>
           <button className="settings-close" onClick={onClose}>✕</button>
         </div>
 
         <div className="settings-body">
-          <label className="settings-label">DeepSeek API Key</label>
-          <p className="settings-hint">AI 玩家需要此 Key 才能做出智能决策</p>
+          {/* Provider tabs */}
+          <label className="settings-label">选择服务商</label>
+          <div className="settings-provider-tabs">
+            {PROVIDERS.map(p => (
+              <button
+                key={p.id}
+                className={`provider-tab ${provider === p.id ? 'active' : ''}`}
+                onClick={() => { setProvider(p.id); resetTest(); }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* API Key */}
+          <label className="settings-label">API Key</label>
           <div className="settings-key-row">
             <input
               ref={inputRef}
               className="settings-key-input"
               type={showKey ? 'text' : 'password'}
               value={apiKey}
-              onChange={e => onKeyChange(e.target.value)}
-              placeholder="sk-..."
+              onChange={e => { setApiKey(e.target.value); resetTest(); }}
+              placeholder={PROVIDERS.find(p => p.id === provider)?.placeholder}
               spellCheck={false}
             />
             <button className="settings-eye" onClick={() => setShowKey(v => !v)}>
@@ -365,10 +411,7 @@ function SettingsModal({ onClose, onKeySaved }: { onClose: () => void; onKeySave
             </button>
           </div>
 
-          {testStatus === 'err' && (
-            <p className="settings-test-err">❌ {testError}</p>
-          )}
-
+          {/* Test button */}
           <motion.button
             className={`settings-save ${testStatus === 'ok' ? 'ok' : testStatus === 'err' ? 'err' : ''}`}
             onClick={testKey}
@@ -376,8 +419,46 @@ function SettingsModal({ onClose, onKeySaved }: { onClose: () => void; onKeySave
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
           >
-            {testStatus === 'testing' ? '验证中…' : testStatus === 'ok' ? '✅ 已保存' : testStatus === 'err' ? '❌ Key 无效' : '验证并保存'}
+            {testStatus === 'testing' ? '验证中…' : testStatus === 'ok' ? '✅ 验证通过' : testStatus === 'err' ? '❌ Key 无效' : '验证 Key'}
           </motion.button>
+
+          {testStatus === 'err' && (
+            <p className="settings-test-err">❌ {testError}</p>
+          )}
+
+          {/* Model selector — shown after test passes */}
+          <AnimatePresence>
+            {testStatus === 'ok' && models.length > 0 && (
+              <motion.div
+                className="settings-model-row"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+              >
+                <label className="settings-label">选择模型</label>
+                <select
+                  className="settings-model-select"
+                  value={selectedModel}
+                  onChange={e => setSelectedModel(e.target.value)}
+                >
+                  {models.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+
+                <motion.button
+                  className="settings-save ok"
+                  onClick={save}
+                  disabled={!selectedModel}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  style={{ marginTop: 8 }}
+                >
+                  保存
+                </motion.button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </motion.div>
     </motion.div>

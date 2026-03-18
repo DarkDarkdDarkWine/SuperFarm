@@ -11,16 +11,58 @@ import type {
   AIDifficulty,
 } from '../../../shared/types/game';
 
+export type AIProvider = 'deepseek' | 'kimi' | 'minimax' | 'zhipu';
+
+export const PROVIDER_CONFIGS: Record<AIProvider, {
+  baseUrl: string;
+  testModel: string;
+  models: string[];
+  label: string;
+}> = {
+  deepseek: {
+    baseUrl: 'https://api.deepseek.com/v1',
+    testModel: 'deepseek-chat',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
+    label: 'DeepSeek',
+  },
+  kimi: {
+    baseUrl: 'https://api.moonshot.cn/v1',
+    testModel: 'moonshot-v1-8k',
+    models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
+    label: 'Kimi',
+  },
+  minimax: {
+    baseUrl: 'https://api.minimax.chat/v1',
+    testModel: 'MiniMax-Text-01',
+    models: ['MiniMax-Text-01', 'abab6.5s-chat', 'abab5.5s-chat'],
+    label: 'MiniMax',
+  },
+  zhipu: {
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    testModel: 'glm-4-flash',
+    models: ['glm-4-flash', 'glm-4', 'glm-4-plus', 'glm-3-turbo'],
+    label: '智谱',
+  },
+};
+
 export class AIService {
   private apiKey: string;
-  private baseUrl: string = 'https://api.deepseek.com/v1';
+  private provider: AIProvider = 'deepseek';
+  private model: string = 'deepseek-chat';
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, provider: AIProvider = 'deepseek', model: string = 'deepseek-chat') {
     this.apiKey = apiKey;
+    this.provider = provider;
+    this.model = model;
   }
 
   updateApiKey(key: string): void {
     this.apiKey = key;
+  }
+
+  updateProvider(provider: AIProvider, model: string): void {
+    this.provider = provider;
+    this.model = model;
   }
 
   /**
@@ -76,8 +118,8 @@ export class AIService {
       // 构建提示词
       const prompt = this.buildPrompt(request);
 
-      // 调用DeepSeek API
-      const response = await this.callDeepSeekAPI(prompt, request.difficulty);
+      // 调用AI API
+      const response = await this.callAIAPI(prompt, request.difficulty);
 
       // 解析响应
       const actions = this.parseResponse(response);
@@ -275,22 +317,22 @@ ${gameStateDesc}
   }
 
   /**
-   * 调用DeepSeek API
+   * 调用AI API
    */
-  private async callDeepSeekAPI(
+  private async callAIAPI(
     prompt: string,
     difficulty: AIDifficulty
   ): Promise<Record<string, unknown>> {
     const temperature = this.getTemperature(difficulty);
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const response = await fetch(`${PROVIDER_CONFIGS[this.provider].baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: this.model,
         messages: [
           {
             role: 'user',
@@ -303,7 +345,7 @@ ${gameStateDesc}
     });
 
     if (!response.ok) {
-      throw new Error(`DeepSeek API error: ${response.statusText}`);
+      throw new Error(`AI API error: ${response.statusText}`);
     }
 
     const data = await response.json() as {

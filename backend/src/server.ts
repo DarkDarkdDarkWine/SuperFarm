@@ -7,6 +7,7 @@ import type { Server as HTTPServer } from 'http';
 import { RoomManager } from './core/RoomManager';
 import { GameEngine } from './core/GameEngine';
 import { AIService } from './services/AIService';
+import type { AIProvider } from './services/AIService';
 import type {
   GameState,
   RoomConfig,
@@ -21,6 +22,7 @@ import type {
 
 interface AIServicePort {
   updateApiKey(key: string): void;
+  updateProvider(provider: AIProvider, model: string): void;
   filterGameState(gameState: GameState, aiPlayerId: string): FilteredGameState;
   getDecision(request: {
     playerId: string;
@@ -643,6 +645,10 @@ export class GameServer {
 
   public updateApiKey(key: string): void {
     this.aiService.updateApiKey(key);
+  }
+
+  public updateProvider(provider: AIProvider, model: string): void {
+    this.aiService.updateProvider(provider, model);
   }
 
   public getIO(): SocketIOServer<ClientToServerEvents, ServerToClientEvents> {
