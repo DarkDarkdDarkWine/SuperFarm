@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { GameConfig, PlayerConfig } from '../App';
 import type { GameMode } from '@shared/types/game';
@@ -16,8 +16,62 @@ const MODES: Array<{ id: GameMode; emoji: string; title: string; desc: string; c
 
 const AI_NAMES = ['稳重老羊', '聪明小猪', '天才马儿', '机器兔兔'];
 
+type PingStatus = 'checking' | 'ok' | 'err';
+
+function StatusDot({ status, label }: { status: PingStatus; label: string }) {
+  const color = status === 'ok' ? '#4caf50' : status === 'err' ? '#f44336' : '#9e9e9e';
+  const title = status === 'ok' ? `${label}正常` : status === 'err' ? `${label}不可用` : `${label}检测中…`;
+  return (
+    <div className="status-dot-wrap" title={title}>
+      <span className={`status-dot ${status}`} style={{ background: color }} />
+      <span className="status-dot-label">{label}</span>
+    </div>
+  );
+}
+
+function useStatusPing() {
+  const [backend, setBackend] = useState<PingStatus>('checking');
+  const [ai, setAi] = useState<PingStatus>('checking');
+
+  const checkBackend = (silent = false) => {
+    if (!silent) setBackend('checking');
+    fetch('/health')
+      .then(r => setBackend(r.ok ? 'ok' : 'err'))
+      .catch(() => setBackend('err'));
+  };
+
+  const checkAi = (silent = false) => {
+    const key = localStorage.getItem('deepseek_api_key')?.trim();
+    if (!key) { setAi('err'); return; }
+    if (!silent) setAi('checking');
+    fetch('/api/config/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deepseekApiKey: key }),
+    })
+      .then(r => r.json())
+      .then((d: { success: boolean }) => setAi(d.success ? 'ok' : 'err'))
+      .catch(() => setAi('err'));
+  };
+
+  useEffect(() => {
+    checkBackend();
+    checkAi();
+
+    const backendTimer = setInterval(() => checkBackend(true), 15_000);
+    const aiTimer = setInterval(() => checkAi(true), 30_000);
+    return () => {
+      clearInterval(backendTimer);
+      clearInterval(aiTimer);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return { backend, ai, recheckAi: checkAi };
+}
+
 export default function SetupPage({ onStart }: { onStart: (config: GameConfig) => void }) {
   const [showSettings, setShowSettings] = useState(false);
+  const { backend, ai, recheckAi } = useStatusPing();
   const [players, setPlayers] = useState<(PlayerConfig | null)[]>([
     { name: '玩家1', type: 'human' },
     { name: AI_NAMES[0], type: 'ai', difficulty: 'easy' },
@@ -62,9 +116,13 @@ export default function SetupPage({ onStart }: { onStart: (config: GameConfig) =
       />
       <div className="setup-hero-overlay" />
 
-      <button className="setup-settings-btn" onClick={() => setShowSettings(true)} title="设置">
-        ⚙️
-      </button>
+      <div className="setup-status-bar">
+        <StatusDot status={backend} label="服务器" />
+        <StatusDot status={ai} label="AI" />
+        <button className="setup-settings-btn" onClick={() => setShowSettings(true)} title="设置">
+          ⚙️
+        </button>
+      </div>
 
       <motion.div
         className="setup-content"
@@ -200,7 +258,7 @@ export default function SetupPage({ onStart }: { onStart: (config: GameConfig) =
       </motion.div>
 
       <AnimatePresence>
-        {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+        {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onKeySaved={recheckAi} />}
       </AnimatePresence>
     </div>
   );
@@ -208,32 +266,12 @@ export default function SetupPage({ onStart }: { onStart: (config: GameConfig) =
 
 // ── Settings modal ─────────────────────────────────────────────────────────
 
-function SettingsModal({ onClose }: { onClose: () => void }) {
+function SettingsModal({ onClose, onKeySaved }: { onClose: () => void; onKeySaved: () => void }) {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('deepseek_api_key') ?? '');
   const [showKey, setShowKey] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'saving' | 'ok' | 'err'>('idle');
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'ok' | 'err'>('idle');
   const [testError, setTestError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-
-  const save = async () => {
-    const key = apiKey.trim();
-    if (!key) return;
-    setStatus('saving');
-    try {
-      const res = await fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deepseekApiKey: key }),
-      });
-      if (!res.ok) throw new Error('failed');
-      localStorage.setItem('deepseek_api_key', key);
-      setStatus('ok');
-      setTimeout(onClose, 800);
-    } catch {
-      setStatus('err');
-    }
-  };
 
   const testKey = async () => {
     const key = apiKey.trim();
@@ -249,6 +287,15 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       const data = await res.json() as { success: boolean; error?: string };
       if (data.success) {
         setTestStatus('ok');
+        // 测试通过即保存
+        await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deepseekApiKey: key }),
+        });
+        localStorage.setItem('deepseek_api_key', key);
+        onKeySaved();
+        setTimeout(onClose, 800);
       } else {
         setTestStatus('err');
         setTestError(data.error ?? '未知错误');
@@ -261,7 +308,6 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
 
   const onKeyChange = (val: string) => {
     setApiKey(val);
-    setStatus('idle');
     setTestStatus('idle');
     setTestError('');
   };
@@ -304,37 +350,19 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             </button>
           </div>
 
-          {testStatus === 'ok' && (
-            <p className="settings-test-ok">✅ Key 有效，连接正常</p>
-          )}
           {testStatus === 'err' && (
             <p className="settings-test-err">❌ {testError}</p>
           )}
-          {status === 'err' && testStatus === 'idle' && (
-            <p className="settings-err">保存失败，请检查服务器是否运行</p>
-          )}
 
-          <div className="settings-actions">
-            <motion.button
-              className={`settings-test ${testStatus === 'ok' ? 'ok' : testStatus === 'err' ? 'err' : ''}`}
-              onClick={testKey}
-              disabled={testStatus === 'testing' || !apiKey.trim()}
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-            >
-              {testStatus === 'testing' ? '测试中…' : testStatus === 'ok' ? '✅ 已验证' : testStatus === 'err' ? '❌ 无效' : '测试'}
-            </motion.button>
-
-            <motion.button
-              className={`settings-save ${status === 'ok' ? 'ok' : ''}`}
-              onClick={save}
-              disabled={status === 'saving' || !apiKey.trim()}
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-            >
-              {status === 'saving' ? '保存中…' : status === 'ok' ? '✅ 已保存' : '保存'}
-            </motion.button>
-          </div>
+          <motion.button
+            className={`settings-save ${testStatus === 'ok' ? 'ok' : testStatus === 'err' ? 'err' : ''}`}
+            onClick={testKey}
+            disabled={testStatus === 'testing' || !apiKey.trim()}
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+          >
+            {testStatus === 'testing' ? '验证中…' : testStatus === 'ok' ? '✅ 已保存' : testStatus === 'err' ? '❌ Key 无效' : '验证并保存'}
+          </motion.button>
         </div>
       </motion.div>
     </motion.div>

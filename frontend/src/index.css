@@ -16,6 +16,10 @@
   --red:     #E53935;
   --shadow:  0 4px 20px rgba(44, 24, 16, 0.13);
   --shadow2: 0 12px 40px rgba(44, 24, 16, 0.18);
+  /* settings modal tokens */
+  --primary: #2e7d32;
+  --text:    #1a1a1a;
+  --font:    'Fredoka', 'Comic Sans MS', cursive, sans-serif;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -343,12 +347,50 @@ input, select { font-family: inherit; }
   opacity: 0.7;
 }
 
+/* Status bar (top-right) */
+.setup-status-bar {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.status-dot-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255,255,255,0.82);
+  backdrop-filter: blur(6px);
+  border-radius: 20px;
+  padding: 4px 10px 4px 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.14);
+  cursor: default;
+}
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.status-dot.checking {
+  animation: dot-pulse 1.2s ease-in-out infinite;
+}
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.status-dot-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #444;
+  line-height: 1;
+}
+
 /* Settings button */
 .setup-settings-btn {
-  position: fixed;
-  top: 16px;
-  right: 20px;
-  z-index: 50;
   background: rgba(255,255,255,0.85);
   border: none;
   border-radius: 50%;
@@ -362,6 +404,7 @@ input, select { font-family: inherit; }
   justify-content: center;
   transition: transform 0.2s, box-shadow 0.2s;
   backdrop-filter: blur(6px);
+  flex-shrink: 0;
 }
 .setup-settings-btn:hover {
   transform: rotate(30deg) scale(1.1);
@@ -471,7 +514,8 @@ input, select { font-family: inherit; }
 .settings-test.ok { background: #e8f5e9; border-color: #43a047; color: #2e7d32; }
 .settings-test.err { background: #ffebee; border-color: #e53935; color: #c62828; }
 .settings-save {
-  flex: 1;
+  width: 100%;
+  margin-top: 6px;
   padding: 12px;
   background: linear-gradient(135deg, var(--primary), #1b5e20);
   color: #fff;
