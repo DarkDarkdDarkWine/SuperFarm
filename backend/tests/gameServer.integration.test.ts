@@ -236,8 +236,8 @@ describe('GameServer integration', () => {
     expect(rollResponse).toEqual({ success: true });
     await expect(diceRolled).resolves.toEqual(['rabbit', 'fox']);
     // With correct order (fox attack first, then breeding):
-    // fox takes all 1 rabbit → rabbit=0, then dice shows 1 rabbit but player has 0 and dice<2 → no gain
-    await expect(breeding).resolves.toMatchObject({ rabbit: { change: 0 } });
+    // fox takes all 1 rabbit → rabbit=0, then dice shows 1 rabbit → die arrives first (先计入数量再繁殖) → gain 1
+    await expect(breeding).resolves.toMatchObject({ rabbit: { change: 1 } });
     await expect(turnChange).resolves.toBe(1);
     await expect(gameState).resolves.toMatchObject({
       currentPlayerIndex: 1,

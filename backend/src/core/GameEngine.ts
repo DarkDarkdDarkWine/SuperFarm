@@ -275,18 +275,12 @@ export class GameEngine {
         return; // 跳过该动物
       }
 
-      // ⚠️ 关键规则2: "有种才能繁殖"
-      // 玩家没有该动物就无法繁殖，无论骰子投出几个
-      if (currentCount === 0) {
-        results[animal] = {
-          old: currentCount,
-          new: currentCount,
-          change: 0,
-        };
-        return; // 跳过该动物
+      // 骰子掷出该动物时先计入数量，再参与繁殖（两个独立步骤）
+      // 当玩家一只都没有时，至少得到 1 只（骰子到达）
+      let totalGain = GameEngine.calculateBreeding(currentCount, diceCount);
+      if (currentCount === 0 && diceCount > 0) {
+        totalGain = Math.max(totalGain, 1);
       }
-
-      const totalGain = GameEngine.calculateBreeding(currentCount, diceCount);
 
       // 受银行库存限制
       const actualGain = Math.min(totalGain, gameState.bank[animal]);

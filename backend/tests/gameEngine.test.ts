@@ -268,7 +268,20 @@ describe('GameEngine', () => {
       expect(gameState.bank.rabbit).toBe(59);
     });
 
-    it('does not grant sheep when player has none, even with double dice', () => {
+    it('grants 1 sheep when player has none but dice shows one sheep (die arrives first)', () => {
+      const gameState = createGameState({
+        players: [createPlayer()],
+        diceResult: ['sheep', 'fox'],
+      });
+
+      const result = GameEngine.processBreeding(gameState);
+
+      expect(result.sheep).toEqual({ old: 0, new: 1, change: 1 });
+      expect(gameState.players[0].animals.sheep).toBe(1);
+      expect(gameState.bank.sheep).toBe(23);
+    });
+
+    it('grants 1 sheep when player has none but dice shows two sheep', () => {
       const gameState = createGameState({
         players: [createPlayer()],
         diceResult: ['sheep', 'sheep'],
@@ -276,9 +289,10 @@ describe('GameEngine', () => {
 
       const result = GameEngine.processBreeding(gameState);
 
-      expect(result.sheep).toEqual({ old: 0, new: 0, change: 0 });
-      expect(gameState.players[0].animals.sheep).toBe(0);
-      expect(gameState.bank.sheep).toBe(24);
+      // calculateBreeding(0, 2) = floor(2/2) = 1, max(1, 1) = 1
+      expect(result.sheep).toEqual({ old: 0, new: 1, change: 1 });
+      expect(gameState.players[0].animals.sheep).toBe(1);
+      expect(gameState.bank.sheep).toBe(23);
     });
 
     it('respects bank stock limits', () => {
