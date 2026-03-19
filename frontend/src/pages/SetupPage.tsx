@@ -52,13 +52,14 @@ function useStatusPing() {
   };
 
   const checkAi = (silent = false) => {
-    const key = localStorage.getItem('deepseek_api_key')?.trim();
+    const key = localStorage.getItem('ai_api_key')?.trim();
+    const provider = localStorage.getItem('ai_provider') ?? 'deepseek';
     if (!key) { setAi('err'); return; }
     if (!silent) setAi('checking');
     fetch(`${BACKEND_URL}/api/config/test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deepseekApiKey: key }),
+      body: JSON.stringify({ provider, apiKey: key }),
     })
       .then(r => r.json())
       .then((d: { success: boolean }) => setAi(d.success ? 'ok' : 'err'))
@@ -281,12 +282,11 @@ export default function SetupPage({ onStart }: { onStart: (config: GameConfig) =
 
 // ── Settings modal ─────────────────────────────────────────────────────────
 
-type AIProvider = 'deepseek' | 'kimi' | 'minimax' | 'zhipu';
+type AIProvider = 'deepseek' | 'minimax' | 'zhipu';
 
 const PROVIDERS: { id: AIProvider; label: string; placeholder: string }[] = [
   { id: 'deepseek', label: 'DeepSeek', placeholder: 'sk-...' },
-  { id: 'kimi',     label: 'Kimi',     placeholder: 'sk-...' },
-  { id: 'minimax',  label: 'MiniMax',  placeholder: '填入 API Key' },
+  { id: 'minimax',  label: 'MiniMax',  placeholder: 'sk-cp-...' },
   { id: 'zhipu',    label: '智谱',     placeholder: '填入 API Key' },
 ];
 

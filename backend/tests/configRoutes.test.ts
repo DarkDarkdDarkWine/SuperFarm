@@ -3,6 +3,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createExpressApp, type AppGameServer } from '../src/app';
+import { PROVIDER_CONFIGS } from '../src/services/AIService';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -65,7 +66,17 @@ function mockFetchNetworkError() {
   vi.mocked(fetch).mockRejectedValueOnce(new Error('ECONNREFUSED'));
 }
 
-// ── Test suite ─────────────────────────────────────────────────────────────
+/** 模拟 /models 接口返回模型列表 */
+function mockFetchModels(ids: string[]) {
+  vi.mocked(fetch).mockResolvedValueOnce(
+    new Response(
+      JSON.stringify({ data: ids.map(id => ({ id, object: 'model' })) }),
+      { status: 200 }
+    )
+  );
+}
+
+// ── POST /api/config ───────────────────────────────────────────────────────
 
 describe('POST /api/config', () => {
   let httpServer: HTTPServer;
@@ -146,7 +157,45 @@ describe('POST /api/config', () => {
     expect(body.success).toBe(false);
     expect(mockGameServer.updateApiKey).not.toHaveBeenCalled();
   });
+
+  // ── provider + model ────────────────────────────────────────────────────
+
+  it.each(['deepseek', 'minimax', 'zhipu'] as const)(
+    'calls updateProvider with correct provider "%s" and specified model',
+    async (provider) => {
+      const model = PROVIDER_CONFIGS[provider].testModel;
+      await jsonRequest(httpServer, 'POST', '/api/config', {
+        apiKey: 'sk-key',
+        provider,
+        model,
+      });
+
+      expect(mockGameServer.updateProvider).toHaveBeenCalledWith(provider, model);
+    }
+  );
+
+  it('defaults provider to deepseek when an unknown provider is given', async () => {
+    await jsonRequest(httpServer, 'POST', '/api/config', {
+      apiKey: 'sk-key',
+      provider: 'unknown-vendor',
+    });
+
+    const [calledProvider] = mockGameServer.updateProvider.mock.calls[0] as [string, string];
+    expect(calledProvider).toBe('deepseek');
+  });
+
+  it('defaults model to the provider testModel when model is omitted', async () => {
+    await jsonRequest(httpServer, 'POST', '/api/config', {
+      apiKey: 'sk-key',
+      provider: 'zhipu',
+    });
+
+    const [, calledModel] = mockGameServer.updateProvider.mock.calls[0] as [string, string];
+    expect(calledModel).toBe(PROVIDER_CONFIGS.zhipu.testModel);
+  });
 });
+
+// ── POST /api/config/test ──────────────────────────────────────────────────
 
 describe('POST /api/config/test', () => {
   let httpServer: HTTPServer;
@@ -167,8 +216,10 @@ describe('POST /api/config/test', () => {
     vi.mocked(fetch).mockReset();
   });
 
+  // ── 基本成功/失败 ─────────────────────────────────────────────────────
+
   it('returns success when provider responds 200 (falls back to hardcoded models if /models fails)', async () => {
-    // First call: chat completions (ok), second call: /models (fails → fallback)
+    // 第一次: chat/completions OK；第二次: /models 失败 → 回退硬编码
     mockFetchOk();
     vi.mocked(fetch).mockRejectedValueOnce(new Error('no models'));
 
@@ -255,7 +306,108 @@ describe('POST /api/config/test', () => {
     const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer sk-trimmed');
   });
+
+  // ── 各厂商 baseUrl 正确 ────────────────────────────────────────────────
+
+  it.each(['deepseek', 'minimax', 'zhipu'] as const)(
+    'hits the correct baseUrl for provider "%s"',
+    async (provider) => {
+      mockFetchOk();
+      // minimax 不拉 /models，deepseek/zhipu 需要第二次 mock
+      if (provider === 'deepseek' || provider === 'zhipu') {
+        vi.mocked(fetch).mockRejectedValueOnce(new Error('no models'));
+      }
+
+      await jsonRequest(httpServer, 'POST', '/api/config/test', {
+        apiKey: 'sk-key',
+        provider,
+      });
+
+      const [url] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+      expect(url).toContain(PROVIDER_CONFIGS[provider].baseUrl);
+    }
+  );
+
+  // ── deepseek / zhipu 动态拉模型 ────────────────────────────────────────
+
+  it.each(['deepseek', 'zhipu'] as const)(
+    '"%s" fetches /models dynamically and returns them',
+    async (provider) => {
+      const dynamicModels = ['model-a', 'model-b'];
+      mockFetchOk();                        // chat/completions
+      mockFetchModels(dynamicModels);       // GET /models
+
+      const { body } = await jsonRequest(httpServer, 'POST', '/api/config/test', {
+        apiKey: 'sk-key',
+        provider,
+      });
+
+      expect(body.success).toBe(true);
+      expect(body.models).toEqual(dynamicModels);
+
+      // 确认第二次请求命中了 /models
+      const calls = vi.mocked(fetch).mock.calls;
+      expect(calls).toHaveLength(2);
+      expect((calls[1] as [string])[0]).toContain('/models');
+    }
+  );
+
+  it.each(['deepseek', 'zhipu'] as const)(
+    '"%s" falls back to hardcoded models when /models returns empty list',
+    async (provider) => {
+      mockFetchOk();
+      // /models 返回空 data
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: [] }), { status: 200 })
+      );
+
+      const { body } = await jsonRequest(httpServer, 'POST', '/api/config/test', {
+        apiKey: 'sk-key',
+        provider,
+      });
+
+      expect(body.success).toBe(true);
+      expect(body.models).toEqual(PROVIDER_CONFIGS[provider].models);
+    }
+  );
+
+  // ── minimax / zhipu 使用硬编码列表 ────────────────────────────────────
+
+  it.each(['minimax'] as const)(
+    '"%s" uses hardcoded model list and does NOT call /models',
+    async (provider) => {
+      mockFetchOk(); // 只有 chat/completions 一次请求
+
+      const { body } = await jsonRequest(httpServer, 'POST', '/api/config/test', {
+        apiKey: 'sk-key',
+        provider,
+      });
+
+      expect(body.success).toBe(true);
+      expect(body.models).toEqual(PROVIDER_CONFIGS[provider].models);
+
+      // 确认只发了一次请求
+      expect(vi.mocked(fetch).mock.calls).toHaveLength(1);
+    }
+  );
+
+  // ── 无效 provider 回退到 deepseek ─────────────────────────────────────
+
+  it('defaults to deepseek baseUrl when provider is unknown', async () => {
+    mockFetchOk();
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('no models'));
+
+    await jsonRequest(httpServer, 'POST', '/api/config/test', {
+      apiKey: 'sk-key',
+      provider: 'openai', // 不在支持列表中
+    });
+
+    const [url] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(PROVIDER_CONFIGS.deepseek.baseUrl);
+  });
 });
+
+// ── GET /health ────────────────────────────────────────────────────────────
 
 describe('GET /health', () => {
   let httpServer: HTTPServer;

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AIService } from '../src/services/AIService';
+import { AIService, PROVIDER_CONFIGS } from '../src/services/AIService';
 import type { AIDecisionRequest, GameState } from '../../shared/types/game';
 
 function createGameState(): GameState {
@@ -132,6 +132,29 @@ describe('AIService', () => {
     expect(decision.actions).toEqual([]);
     consoleErrorSpy.mockRestore();
   });
+
+  it.each(['deepseek', 'minimax', 'zhipu'] as const)(
+    'calls the correct baseUrl after updateProvider("%s")',
+    async (provider) => {
+      const service = new AIService('test-key');
+      service.updateProvider(provider, PROVIDER_CONFIGS[provider].testModel);
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            choices: [{ message: { content: JSON.stringify({ reasoning: 'ok', confidence: 0.5, actions: [] }) } }],
+          }),
+        })
+      );
+
+      await service.getDecision(createRequest());
+
+      const [calledUrl] = vi.mocked(fetch).mock.calls[0] as [string];
+      expect(calledUrl).toContain(PROVIDER_CONFIGS[provider].baseUrl);
+    }
+  );
 
   it('returns the guardrail fallback when the API call fails', async () => {
     const service = new AIService('test-key');

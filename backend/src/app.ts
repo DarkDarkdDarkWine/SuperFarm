@@ -86,10 +86,10 @@ export function createExpressApp(
       }
 
       // 2. 获取可用模型列表
-      // DeepSeek 和 Kimi 支持 GET /models（标准 OpenAI 格式）
-      // 智谱和 MiniMax 没有此接口，直接使用硬编码列表
+      // DeepSeek、智谱 支持 GET /models（标准 OpenAI 格式）
+      // MiniMax 没有此接口，直接使用硬编码列表
       let models: string[] = providerConfig.models;
-      const supportsModelsList: AIProvider[] = ['deepseek', 'kimi'];
+      const supportsModelsList: AIProvider[] = ['deepseek', 'zhipu'];
       if (supportsModelsList.includes(provider)) {
         try {
           const modelsResponse = await fetch(`${providerConfig.baseUrl}/models`, {

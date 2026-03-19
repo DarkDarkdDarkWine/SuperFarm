@@ -11,7 +11,7 @@ import type {
   AIDifficulty,
 } from '../../../shared/types/game';
 
-export type AIProvider = 'deepseek' | 'kimi' | 'minimax' | 'zhipu';
+export type AIProvider = 'deepseek' | 'minimax' | 'zhipu';
 
 export const PROVIDER_CONFIGS: Record<AIProvider, {
   baseUrl: string;
@@ -25,12 +25,6 @@ export const PROVIDER_CONFIGS: Record<AIProvider, {
     models: ['deepseek-chat', 'deepseek-reasoner'],
     label: 'DeepSeek',
   },
-  kimi: {
-    baseUrl: 'https://api.moonshot.cn/v1',
-    testModel: 'moonshot-v1-8k',
-    models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
-    label: 'Kimi',
-  },
   minimax: {
     baseUrl: 'https://api.minimaxi.com/v1',
     testModel: 'MiniMax-M2.5',
@@ -40,7 +34,7 @@ export const PROVIDER_CONFIGS: Record<AIProvider, {
   zhipu: {
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     testModel: 'glm-4-flash-250414',
-    models: ['glm-4-plus', 'glm-4-air-250414', 'glm-4-airx', 'glm-4-flashx', 'glm-4-flash-250414', 'glm-4-long'],
+    models: ['glm-5', 'glm-5-turbo', 'glm-4.7', 'glm-4.6', 'glm-4.5', 'glm-4.5-air', 'glm-4-flash-250414'],
     label: '智谱',
   },
 };
