@@ -265,40 +265,37 @@ export class GameEngine {
       const currentCount = player.animals[animal];
       const diceCount = diceAnimals[animal] || 0;
 
-      // ⚠️ 关键规则1: 骰子没有掷出该动物，不发生任何变化
-      if (diceCount === 0) {
-        results[animal] = {
-          old: currentCount,
-          new: currentCount,
-          change: 0,
-        };
-        return; // 跳过该动物
+      // 繁殖公式返回新的总数: floor((现有 + 骰子) / 2)
+      // 适用于所有动物，无论骰子是否掷出该动物
+      // 奇数动物会因配对损失而减少（归还银行），这是原版核心规则
+      const newCount = GameEngine.calculateBreeding(currentCount, diceCount);
+      const rawChange = newCount - currentCount;
+
+      let actualNewCount: number;
+      let actualChange: number;
+
+      if (rawChange > 0) {
+        // 数量增加，从银行取出（受库存限制）
+        const actualGain = Math.min(rawChange, gameState.bank[animal]);
+        actualNewCount = currentCount + actualGain;
+        actualChange = actualGain;
+        gameState.bank[animal] -= actualGain;
+      } else if (rawChange < 0) {
+        // 数量减少（奇数损失），归还银行
+        actualNewCount = newCount;
+        actualChange = rawChange;
+        gameState.bank[animal] += Math.abs(rawChange);
+      } else {
+        actualNewCount = currentCount;
+        actualChange = 0;
       }
 
-      // 骰子掷出该动物时先计入数量，再参与繁殖（两个独立步骤）
-      // 当玩家一只都没有时，至少得到 1 只（骰子到达）
-      let totalGain = GameEngine.calculateBreeding(currentCount, diceCount);
-      if (currentCount === 0 && diceCount > 0) {
-        totalGain = Math.max(totalGain, 1);
-      }
-
-      // 受银行库存限制
-      const actualGain = Math.min(totalGain, gameState.bank[animal]);
-      const newCount = currentCount + actualGain;
-      const change = actualGain;
-
-      // 更新玩家动物数量
-      player.animals[animal] = newCount;
-
-      // 从银行取出
-      if (change > 0) {
-        gameState.bank[animal] -= change;
-      }
+      player.animals[animal] = actualNewCount;
 
       results[animal] = {
         old: currentCount,
-        new: newCount,
-        change,
+        new: actualNewCount,
+        change: actualChange,
       };
     });
 

@@ -150,16 +150,16 @@ describe('GameEngine', () => {
   });
 
   describe('calculateBreeding', () => {
-    it('returns gain = floor((current + dice) / 2)', () => {
-      // (1+1)/2 = 1 → player gains 1, ends with 2
+    it('returns new total = floor((current + dice) / 2)', () => {
+      // (1+1)/2 = 1 → 新总数为 1，不增不减
       expect(GameEngine.calculateBreeding(1, 1)).toBe(1);
-      // (2+2)/2 = 2 → player gains 2, ends with 4
+      // (2+2)/2 = 2 → 新总数为 2，不增不减
       expect(GameEngine.calculateBreeding(2, 2)).toBe(2);
-      // (3+2)/2 = 2 → player gains 2, ends with 5
+      // (3+2)/2 = 2 → 新总数为 2，持有 3 只时减少 1 只（奇数损失）
       expect(GameEngine.calculateBreeding(3, 2)).toBe(2);
-      // (0+1)/2 = 0 → no seed, no gain
+      // (0+1)/2 = 0 → 需要至少 2 只才能得到 1 只后代
       expect(GameEngine.calculateBreeding(0, 1)).toBe(0);
-      // (0+2)/2 = 1 → 纯数学结果，但实际游戏中 processBreeding 会因无种跳过
+      // (0+2)/2 = 1 → 新总数为 1，从银行获得 1 只
       expect(GameEngine.calculateBreeding(0, 2)).toBe(1);
     });
   });
@@ -251,7 +251,7 @@ describe('GameEngine', () => {
   });
 
   describe('processBreeding', () => {
-    it('does not grant a second copy of a single die result', () => {
+    it('1 rabbit + 1 dice rabbit → new total = 1, no change', () => {
       const gameState = createGameState({
         players: [
           createPlayer({
@@ -263,12 +263,13 @@ describe('GameEngine', () => {
 
       const result = GameEngine.processBreeding(gameState);
 
-      expect(result.rabbit).toEqual({ old: 1, new: 2, change: 1 });
-      expect(gameState.players[0].animals.rabbit).toBe(2);
-      expect(gameState.bank.rabbit).toBe(59);
+      // floor((1+1)/2) = 1 = new total → no change, no bank interaction
+      expect(result.rabbit).toEqual({ old: 1, new: 1, change: 0 });
+      expect(gameState.players[0].animals.rabbit).toBe(1);
+      expect(gameState.bank.rabbit).toBe(60);
     });
 
-    it('grants 1 sheep when player has none but dice shows one sheep (die arrives first)', () => {
+    it('0 sheep + 1 dice sheep → new total = 0 (need ≥2 in pool to get first offspring)', () => {
       const gameState = createGameState({
         players: [createPlayer()],
         diceResult: ['sheep', 'fox'],
@@ -276,12 +277,13 @@ describe('GameEngine', () => {
 
       const result = GameEngine.processBreeding(gameState);
 
-      expect(result.sheep).toEqual({ old: 0, new: 1, change: 1 });
-      expect(gameState.players[0].animals.sheep).toBe(1);
-      expect(gameState.bank.sheep).toBe(23);
+      // floor((0+1)/2) = 0 → no gain
+      expect(result.sheep).toEqual({ old: 0, new: 0, change: 0 });
+      expect(gameState.players[0].animals.sheep).toBe(0);
+      expect(gameState.bank.sheep).toBe(24);
     });
 
-    it('grants 1 sheep when player has none but dice shows two sheep', () => {
+    it('0 sheep + 2 dice sheep → new total = 1, gains 1 from bank', () => {
       const gameState = createGameState({
         players: [createPlayer()],
         diceResult: ['sheep', 'sheep'],
@@ -289,26 +291,41 @@ describe('GameEngine', () => {
 
       const result = GameEngine.processBreeding(gameState);
 
-      // calculateBreeding(0, 2) = floor(2/2) = 1, max(1, 1) = 1
+      // floor((0+2)/2) = 1 → gain 1 from bank
       expect(result.sheep).toEqual({ old: 0, new: 1, change: 1 });
       expect(gameState.players[0].animals.sheep).toBe(1);
       expect(gameState.bank.sheep).toBe(23);
     });
 
-    it('respects bank stock limits', () => {
+    it('odd count with 0 dice causes loss (applies formula even without matching dice)', () => {
       const gameState = createGameState({
         players: [
           createPlayer({
-            animals: { rabbit: 5, sheep: 0, pig: 0, cow: 0, horse: 0 },
+            animals: { rabbit: 3, sheep: 0, pig: 0, cow: 0, horse: 0 },
           }),
         ],
-        bank: createBank({ rabbit: 1 }),
-        diceResult: ['rabbit', 'fox'],
+        diceResult: ['sheep', 'fox'], // no rabbit dice
       });
 
       const result = GameEngine.processBreeding(gameState);
 
-      expect(result.rabbit).toEqual({ old: 5, new: 6, change: 1 });
+      // rabbit: floor((3+0)/2) = 1 → loses 2, returns to bank
+      expect(result.rabbit).toEqual({ old: 3, new: 1, change: -2 });
+      expect(gameState.players[0].animals.rabbit).toBe(1);
+      expect(gameState.bank.rabbit).toBe(62);
+    });
+
+    it('gain from bank is capped by available bank stock', () => {
+      const gameState = createGameState({
+        players: [createPlayer()],
+        bank: createBank({ rabbit: 0 }),
+        diceResult: ['rabbit', 'rabbit'], // would normally give floor(2/2)=1
+      });
+
+      const result = GameEngine.processBreeding(gameState);
+
+      // wants to gain 1 rabbit but bank is empty
+      expect(result.rabbit).toEqual({ old: 0, new: 0, change: 0 });
       expect(gameState.bank.rabbit).toBe(0);
     });
   });

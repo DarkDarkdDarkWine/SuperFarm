@@ -274,8 +274,9 @@ describe('GameServer internals', () => {
         createPlayer({
           id: 'player-1',
           name: 'Alice',
-          animals: { rabbit: 1, sheep: 1, pig: 1, cow: 1, horse: 1 },
-          protection: { smallDog: 1, bigDog: 0 },
+          // 偶数动物：floor((2+0)/2)=1，骰子不含该动物时仍能保留 1 只
+          // 保证繁殖后每种动物仍 ≥1，满足胜利条件
+          animals: { rabbit: 2, sheep: 2, pig: 2, cow: 2, horse: 2 },
         }),
         createPlayer({ id: 'player-2', name: 'Bob' }),
       ],
