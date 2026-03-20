@@ -59,8 +59,8 @@ export class GameEngine {
 
   /**
    * 掷骰子 - 使用两个不同的骰子 per v2 rules
-   * 骰子A: rabbit x6, sheep x2, pig x2, horse x1, fox x1
-   * 骰子B: rabbit x6, sheep x3, pig x1, cow x1, wolf x1
+   * 骰子A: rabbit x6, sheep x3, pig x1, cow x1, fox x1
+   * 骰子B: rabbit x6, sheep x3, pig x1, horse x1, wolf x1
    */
   static rollDice(mode: GameMode): DiceResult[] {
     void mode;
@@ -265,38 +265,26 @@ export class GameEngine {
       const currentCount = player.animals[animal];
       const diceCount = diceAnimals[animal] || 0;
 
-      // 繁殖公式返回新的总数: floor((现有 + 骰子) / 2)
-      // 适用于所有动物，无论骰子是否掷出该动物
-      // 奇数动物会因配对损失而减少（归还银行），这是原版核心规则
-      const newCount = GameEngine.calculateBreeding(currentCount, diceCount);
-      const rawChange = newCount - currentCount;
-
-      let actualNewCount: number;
-      let actualChange: number;
-
-      if (rawChange > 0) {
-        // 数量增加，从银行取出（受库存限制）
-        const actualGain = Math.min(rawChange, gameState.bank[animal]);
-        actualNewCount = currentCount + actualGain;
-        actualChange = actualGain;
-        gameState.bank[animal] -= actualGain;
-      } else if (rawChange < 0) {
-        // 数量减少（奇数损失），归还银行
-        actualNewCount = newCount;
-        actualChange = rawChange;
-        gameState.bank[animal] += Math.abs(rawChange);
-      } else {
-        actualNewCount = currentCount;
-        actualChange = 0;
+      // 骰子没有掷出该动物，不繁殖
+      if (diceCount === 0) {
+        results[animal] = { old: currentCount, new: currentCount, change: 0 };
+        return;
       }
 
-      player.animals[animal] = actualNewCount;
+      // 有种才能繁殖：没有该动物无法繁殖
+      if (currentCount === 0) {
+        results[animal] = { old: currentCount, new: currentCount, change: 0 };
+        return;
+      }
 
-      results[animal] = {
-        old: currentCount,
-        new: actualNewCount,
-        change: actualChange,
-      };
+      const gain = GameEngine.calculateBreeding(currentCount, diceCount);
+      const actualGain = Math.min(gain, gameState.bank[animal]);
+      const newCount = currentCount + actualGain;
+
+      player.animals[animal] = newCount;
+      gameState.bank[animal] -= actualGain;
+
+      results[animal] = { old: currentCount, new: newCount, change: actualGain };
     });
 
     return results;
@@ -311,17 +299,24 @@ export class GameEngine {
     bank: Bank,
     mode: GameMode
   ): { blocked: boolean; rabbitsLost: number } {
-    // 检查是否有小狗防护
+    // 小狗优先防狐狸
     if (victim.protection.smallDog > 0) {
       victim.protection.smallDog -= 1;
       bank.smallDog += 1;
       return { blocked: true, rabbitsLost: 0 };
     }
 
+    // 大狗也能防狐狸（优先保留大狗对抗狼，但没小狗时用大狗）
+    if (victim.protection.bigDog > 0) {
+      victim.protection.bigDog -= 1;
+      bank.bigDog += 1;
+      return { blocked: true, rabbitsLost: 0 };
+    }
+
     // 根据模式处理攻击
     let rabbitsLost: number;
 
-    if (mode === 'classic' || mode === 'hard') {
+    if (mode === 'classic') {
       // 经典模式：清空所有兔子
       rabbitsLost = victim.animals.rabbit;
       victim.animals.rabbit = 0;

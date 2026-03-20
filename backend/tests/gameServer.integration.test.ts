@@ -236,8 +236,8 @@ describe('GameServer integration', () => {
     expect(rollResponse).toEqual({ success: true });
     await expect(diceRolled).resolves.toEqual(['rabbit', 'fox']);
     // Alice has 1 rabbit, dice = [rabbit, fox]
-    // Breeding: floor((1+1)/2) = 1 = new total → no change (pairs cancel out)
-    // Fox attacks Bob (opponent), not Alice
+    // Attack first: fox attacks Alice (the roller) → no small/big dog → classic mode → loses all 1 rabbit → 0 rabbits
+    // Breeding: current=0, dice=1 rabbit → skip (有种才能繁殖) → change=0
     await expect(breeding).resolves.toMatchObject({ rabbit: { change: 0 } });
     await expect(turnChange).resolves.toBe(1);
     await expect(gameState).resolves.toMatchObject({

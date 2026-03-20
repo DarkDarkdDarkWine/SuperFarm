@@ -8,7 +8,7 @@
 export type AnimalType = 'rabbit' | 'sheep' | 'pig' | 'cow' | 'horse';
 export type ProtectionType = 'smallDog' | 'bigDog';
 export type DiceResult = AnimalType | 'fox' | 'wolf';
-export type GameMode = 'classic' | 'casual' | 'hard';
+export type GameMode = 'classic' | 'casual';
 export type AIDifficulty = 'easy' | 'medium' | 'hard';
 export type PlayerType = 'human' | 'ai';
 
@@ -251,10 +251,10 @@ export const GAME_CONSTANTS = {
   // 骰子A配置（橙色骰）- per v2 rules
   DICE_A: [
     'rabbit', 'rabbit', 'rabbit', 'rabbit', 'rabbit', 'rabbit', // 6面
-    'sheep', 'sheep',                                             // 2面
-    'pig', 'pig',                                                 // 2面
-    'horse',                                                      // 1面
-    'fox',                                                        // 1面
+    'sheep', 'sheep', 'sheep',                                   // 3面
+    'pig',                                                       // 1面
+    'cow',                                                       // 1面
+    'fox',                                                       // 1面
   ] as DiceResult[],
 
   // 骰子B配置（蓝色骰）- per v2 rules
@@ -262,7 +262,7 @@ export const GAME_CONSTANTS = {
     'rabbit', 'rabbit', 'rabbit', 'rabbit', 'rabbit', 'rabbit', // 6面
     'sheep', 'sheep', 'sheep',                                   // 3面
     'pig',                                                       // 1面
-    'cow',                                                       // 1面
+    'horse',                                                     // 1面
     'wolf',                                                      // 1面
   ] as DiceResult[],
 
@@ -270,14 +270,12 @@ export const GAME_CONSTANTS = {
   MAX_ROUNDS: {
     classic: 50,
     casual: 30,
-    hard: 60,
   },
 
   // 初始动物
   INITIAL_ANIMALS: {
     classic: { rabbit: 1, sheep: 0, pig: 0, cow: 0, horse: 0 },
     casual: { rabbit: 2, sheep: 0, pig: 0, cow: 0, horse: 0 },
-    hard: { rabbit: 1, sheep: 0, pig: 0, cow: 0, horse: 0 },
   },
 } as const;
 
