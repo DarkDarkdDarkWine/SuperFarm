@@ -329,20 +329,17 @@ export class GameEngine {
       return { blocked: true, animalsLost: {} };
     }
 
-    // 失去所有兔子、羊、猪、牛（马和小狗保留）
+    // 狼吃掉羊、猪、牛（兔子和马不受影响）
     const animalsLost = {
-      rabbit: victim.animals.rabbit,
       sheep: victim.animals.sheep,
       pig: victim.animals.pig,
       cow: victim.animals.cow,
     };
 
-    bank.rabbit += victim.animals.rabbit;
     bank.sheep += victim.animals.sheep;
     bank.pig += victim.animals.pig;
     bank.cow += victim.animals.cow;
 
-    victim.animals.rabbit = 0;
     victim.animals.sheep = 0;
     victim.animals.pig = 0;
     victim.animals.cow = 0;

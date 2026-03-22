@@ -209,7 +209,7 @@ function processDice(state: State): State {
       player.protection.bigDog -= 1;
       bank.bigDog += 1;
     } else {
-      (['rabbit', 'sheep', 'pig', 'cow'] as AnimalType[]).forEach(a => {
+      (['sheep', 'pig', 'cow'] as AnimalType[]).forEach(a => {
         if (player.animals[a] > 0) {
           animalsLost[a] = player.animals[a];
           bank[a] += player.animals[a];
