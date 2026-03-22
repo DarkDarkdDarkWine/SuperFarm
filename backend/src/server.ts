@@ -173,6 +173,7 @@ export class GameServer {
           const result = this.roomManager.startGame(roomId, gameState);
 
           if (result.success) {
+            console.log(`Game started in room ${roomId}`);
             this.io.to(roomId).emit('game:started', gameState);
             callback({ success: true, gameState });
 
@@ -616,6 +617,7 @@ export class GameServer {
       });
 
       // 若 LLM 无响应，用规则兜底（保证 AI 不会呆站着不动）
+      console.log(`AI decision for ${currentPlayer.name}: LLM=${decision.actions.length > 0}, actions=${decision.actions.length}, thinking=${decision.thinkingTime}ms`);
       const actionsToRun = decision.actions.length > 0
         ? decision.actions
         : this.getRuleBasedActions(currentPlayer, gameState.bank, difficulty);
