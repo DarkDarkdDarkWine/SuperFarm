@@ -66,6 +66,18 @@ function useStatusPing() {
   };
 
   useEffect(() => {
+    // 页面加载时把 localStorage 里的 key 自动恢复到后端（容器重启后内存丢失）
+    const savedKey = localStorage.getItem('ai_api_key')?.trim();
+    const savedProvider = localStorage.getItem('ai_provider') ?? 'deepseek';
+    const savedModel = localStorage.getItem('ai_model')?.trim();
+    if (savedKey && savedModel) {
+      fetch(`${BACKEND_URL}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: savedProvider, apiKey: savedKey, model: savedModel }),
+      }).catch(() => {/* 静默失败，statusDot 会显示红灯 */});
+    }
+
     checkBackend();
     checkAi();
 
