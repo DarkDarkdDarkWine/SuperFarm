@@ -39,8 +39,8 @@ export type GamePhase = 'exchange' | 'rolling' | 'event' | 'finished';
 export type GameEvent =
   | { kind: 'breeding'; diceResult: DiceResult[]; results: BreedingResults }
   | { kind: 'nothing'; diceResult: DiceResult[] }
-  | { kind: 'fox'; diceResult: DiceResult[]; blocked: boolean; rabbitsLost: number }
-  | { kind: 'wolf'; diceResult: DiceResult[]; blocked: boolean; animalsLost: Partial<Record<AnimalType, number>> };
+  | { kind: 'fox'; diceResult: DiceResult[]; blocked: boolean; rabbitsLost: number; breedingBefore?: BreedingResults }
+  | { kind: 'wolf'; diceResult: DiceResult[]; blocked: boolean; animalsLost: Partial<Record<AnimalType, number>>; breedingBefore?: BreedingResults };
 
 export type HistoryEntry = { text: string; ts: number };
 
@@ -143,64 +143,9 @@ function processDice(state: State): State {
   const player = players[pi];
   const hasFox = dice.includes('fox');
   const hasWolf = dice.includes('wolf');
+  const history: typeof state.history = [...state.history];
 
-  if (hasFox) {
-    const blocked = player.protection.smallDog > 0;
-    let rabbitsLost = 0;
-    if (blocked) {
-      player.protection.smallDog -= 1;
-      bank.smallDog += 1;
-    } else {
-      rabbitsLost = Math.max(0, player.animals.rabbit - 1);
-      player.animals.rabbit = Math.min(player.animals.rabbit, 1);
-      bank.rabbit += rabbitsLost;
-    }
-    return {
-      ...state, players, bank, phase: 'event',
-      currentEvent: { kind: 'fox', diceResult: dice, blocked, rabbitsLost },
-      history: [...state.history, {
-        text: blocked
-          ? `${player.name} 的小狗🐕 赶跑了狐狸！`
-          : rabbitsLost > 0
-            ? `🦊 狐狸偷走了 ${player.name} 的 ${rabbitsLost} 只兔子！`
-            : `🦊 狐狸来了，但没兔子可偷！`,
-        ts: Date.now(),
-      }],
-    };
-  }
-
-  if (hasWolf) {
-    const blocked = player.protection.bigDog > 0;
-    const animalsLost: Partial<Record<AnimalType, number>> = {};
-    if (blocked) {
-      player.protection.bigDog -= 1;
-      bank.bigDog += 1;
-    } else {
-      (['rabbit', 'sheep', 'pig', 'cow'] as AnimalType[]).forEach(a => {
-        if (player.animals[a] > 0) {
-          animalsLost[a] = player.animals[a];
-          bank[a] += player.animals[a];
-          player.animals[a] = 0;
-        }
-      });
-    }
-    const lostText = Object.entries(animalsLost)
-      .map(([a, n]) => `${n}只${ANIMAL_LABELS[a as AnimalType]}`).join('、');
-    return {
-      ...state, players, bank, phase: 'event',
-      currentEvent: { kind: 'wolf', diceResult: dice, blocked, animalsLost },
-      history: [...state.history, {
-        text: blocked
-          ? `${player.name} 的大狗🦮 赶跑了狼！`
-          : lostText
-            ? `🐺 狼吃掉了 ${player.name} 的 ${lostText}！`
-            : `🐺 狼来了，但没什么可吃的！`,
-        ts: Date.now(),
-      }],
-    };
-  }
-
-  // Breeding
+  // === 阶段1：先繁殖（无论有无灾难） ===
   const diceAnimals: Partial<Record<AnimalType, number>> = {};
   dice.forEach(face => {
     if (face in ANIMAL_LABELS) {
@@ -222,27 +167,85 @@ function processDice(state: State): State {
   });
 
   const hasBreeding = Object.keys(results).length > 0;
+  if (hasBreeding) {
+    const gainsText = Object.entries(results)
+      .map(([a, r]) => `+${r!.change}只${ANIMAL_LABELS[a as AnimalType]}`).join('、');
+    history.push({ text: `🌱 ${player.name} 繁殖了：${gainsText}`, ts: Date.now() });
+  }
+
+  // === 阶段2：灾难（繁殖之后） ===
+  if (hasFox) {
+    const blocked = player.protection.smallDog > 0;
+    let rabbitsLost = 0;
+    if (blocked) {
+      player.protection.smallDog -= 1;
+      bank.smallDog += 1;
+    } else {
+      rabbitsLost = Math.max(0, player.animals.rabbit - 1);
+      player.animals.rabbit = Math.min(player.animals.rabbit, 1);
+      bank.rabbit += rabbitsLost;
+    }
+    history.push({
+      text: blocked
+        ? `${player.name} 的小狗🐕 赶跑了狐狸！`
+        : rabbitsLost > 0
+          ? `🦊 狐狸偷走了 ${player.name} 的 ${rabbitsLost} 只兔子！`
+          : `🦊 狐狸来了，但没兔子可偷！`,
+      ts: Date.now(),
+    });
+    return {
+      ...state, players, bank, phase: 'event',
+      currentEvent: { kind: 'fox', diceResult: dice, blocked, rabbitsLost, breedingBefore: hasBreeding ? results : undefined },
+      history,
+    };
+  }
+
+  if (hasWolf) {
+    const blocked = player.protection.bigDog > 0;
+    const animalsLost: Partial<Record<AnimalType, number>> = {};
+    if (blocked) {
+      player.protection.bigDog -= 1;
+      bank.bigDog += 1;
+    } else {
+      (['rabbit', 'sheep', 'pig', 'cow'] as AnimalType[]).forEach(a => {
+        if (player.animals[a] > 0) {
+          animalsLost[a] = player.animals[a];
+          bank[a] += player.animals[a];
+          player.animals[a] = 0;
+        }
+      });
+    }
+    const lostText = Object.entries(animalsLost)
+      .map(([a, n]) => `${n}只${ANIMAL_LABELS[a as AnimalType]}`).join('、');
+    history.push({
+      text: blocked
+        ? `${player.name} 的大狗🦮 赶跑了狼！`
+        : lostText
+          ? `🐺 狼吃掉了 ${player.name} 的 ${lostText}！`
+          : `🐺 狼来了，但没什么可吃的！`,
+      ts: Date.now(),
+    });
+    return {
+      ...state, players, bank, phase: 'event',
+      currentEvent: { kind: 'wolf', diceResult: dice, blocked, animalsLost, breedingBefore: hasBreeding ? results : undefined },
+      history,
+    };
+  }
+
+  // 无灾难
   if (!hasBreeding) {
     const diceText = dice.map(d => DICE_EMOJI[d]).join(' ');
     return advanceTurn({
       ...state, players, bank,
       pendingDice: dice,
-      history: [...state.history, {
-        text: `${player.name} 掷出 ${diceText}，没有收获`,
-        ts: Date.now(),
-      }],
+      history: [...history, { text: `${player.name} 掷出 ${diceText}，没有收获`, ts: Date.now() }],
     });
   }
 
-  const gainsText = Object.entries(results)
-    .map(([a, r]) => `+${r!.change}只${ANIMAL_LABELS[a as AnimalType]}`).join('、');
   return {
     ...state, players, bank, phase: 'event',
     currentEvent: { kind: 'breeding', diceResult: dice, results },
-    history: [...state.history, {
-      text: `🌱 ${player.name} 繁殖了：${gainsText}`,
-      ts: Date.now(),
-    }],
+    history,
   };
 }
 

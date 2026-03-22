@@ -389,63 +389,101 @@ function EventOverlay({ event, onDismiss }: { event: GameEvent; onDismiss: () =>
         )}
 
         {event.kind === 'fox' && (
-          event.blocked ? (
-            <>
-              <div className="ev-icon">🐕</div>
-              <h2 className="ev-title good">小狗赶跑了狐狸！</h2>
-              <p className="ev-desc">小狗保护了你的兔子 🎉</p>
-            </>
-          ) : (
-            <>
-              <motion.img
-                src={foxImg}
-                alt="狐狸"
-                className="ev-animal-img"
-                initial={{ x: 120, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ type: 'spring', stiffness: 180, damping: 16 }}
-              />
-              <h2 className="ev-title danger">狐狸来偷兔子了！</h2>
-              {event.rabbitsLost > 0
-                ? <p className="ev-desc danger">偷走了 <strong>{event.rabbitsLost}</strong> 只兔子 😢</p>
-                : <p className="ev-desc">没有兔子可偷，狐狸空手而归！</p>
-              }
-            </>
-          )
-        )}
-
-        {event.kind === 'wolf' && (
-          event.blocked ? (
-            <>
-              <div className="ev-icon">🦮</div>
-              <h2 className="ev-title good">大狗赶跑了狼！</h2>
-              <p className="ev-desc">大狗保护了你的动物 🎉</p>
-            </>
-          ) : (
-            <>
-              <motion.img
-                src={wolfImg}
-                alt="狼"
-                className="ev-animal-img"
-                initial={{ scale: 0.4, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: 'spring', stiffness: 200, damping: 14 }}
-              />
-              <h2 className="ev-title danger">狼来了！</h2>
-              {Object.keys(event.animalsLost).length > 0 ? (
-                <div className="lost-row">
-                  {(Object.entries(event.animalsLost) as [AnimalType, number][]).map(([a, n]) => (
-                    <div key={a} className="lost-item">
-                      <span>{ANIMAL_STYLE[a].emoji}</span>
-                      <span className="lost-n">-{n}</span>
+          <>
+            {event.breedingBefore && Object.keys(event.breedingBefore).length > 0 && (
+              <div className="breeding-before">
+                <p className="ev-sub-title">🌱 先繁殖</p>
+                <div className="breed-list">
+                  {(Object.entries(event.breedingBefore) as [AnimalType, { old: number; new: number; change: number }][]).map(([a, r]) => (
+                    <div key={a} className="breed-row">
+                      <span className="br-emoji">{ANIMAL_STYLE[a].emoji}</span>
+                      <span className="br-old">{r.old}</span>
+                      <span className="br-arrow">→</span>
+                      <span className="br-new">{r.new}</span>
+                      <span className="br-gain">+{r.change}</span>
                     </div>
                   ))}
                 </div>
-              ) : (
-                <p className="ev-desc">没有动物可吃，狼空手而归！</p>
-              )}
-            </>
-          )
+                <div className="ev-divider">然后——</div>
+              </div>
+            )}
+            {event.blocked ? (
+              <>
+                <div className="ev-icon">🐕</div>
+                <h2 className="ev-title good">小狗赶跑了狐狸！</h2>
+                <p className="ev-desc">小狗保护了你的兔子 🎉</p>
+              </>
+            ) : (
+              <>
+                <motion.img
+                  src={foxImg}
+                  alt="狐狸"
+                  className="ev-animal-img"
+                  initial={{ x: 120, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ type: 'spring', stiffness: 180, damping: 16 }}
+                />
+                <h2 className="ev-title danger">狐狸来偷兔子了！</h2>
+                {event.rabbitsLost > 0
+                  ? <p className="ev-desc danger">偷走了 <strong>{event.rabbitsLost}</strong> 只兔子 😢</p>
+                  : <p className="ev-desc">没有兔子可偷，狐狸空手而归！</p>
+                }
+              </>
+            )}
+          </>
+        )}
+
+        {event.kind === 'wolf' && (
+          <>
+            {event.breedingBefore && Object.keys(event.breedingBefore).length > 0 && (
+              <div className="breeding-before">
+                <p className="ev-sub-title">🌱 先繁殖</p>
+                <div className="breed-list">
+                  {(Object.entries(event.breedingBefore) as [AnimalType, { old: number; new: number; change: number }][]).map(([a, r]) => (
+                    <div key={a} className="breed-row">
+                      <span className="br-emoji">{ANIMAL_STYLE[a].emoji}</span>
+                      <span className="br-old">{r.old}</span>
+                      <span className="br-arrow">→</span>
+                      <span className="br-new">{r.new}</span>
+                      <span className="br-gain">+{r.change}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="ev-divider">然后——</div>
+              </div>
+            )}
+            {event.blocked ? (
+              <>
+                <div className="ev-icon">🦮</div>
+                <h2 className="ev-title good">大狗赶跑了狼！</h2>
+                <p className="ev-desc">大狗保护了你的动物 🎉</p>
+              </>
+            ) : (
+              <>
+                <motion.img
+                  src={wolfImg}
+                  alt="狼"
+                  className="ev-animal-img"
+                  initial={{ scale: 0.4, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', stiffness: 200, damping: 14 }}
+                />
+                <h2 className="ev-title danger">狼来了！</h2>
+                {Object.keys(event.animalsLost).length > 0 ? (
+                  <div className="lost-row">
+                    {(Object.entries(event.animalsLost) as [AnimalType, number][]).map(([a, n]) => (
+                      <div key={a} className="lost-item">
+                        <span>{ANIMAL_STYLE[a].emoji}</span>
+                        <span className="lost-n">-{n}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="ev-desc">没有动物可吃，狼空手而归！</p>
+                )}
+              </>
+            )}
+          </>
         )}
 
         {event.kind === 'nothing' && (
