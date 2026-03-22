@@ -616,15 +616,9 @@ export class GameServer {
         difficulty,
       });
 
-      // 若 LLM 无响应，用规则兜底（保证 AI 不会呆站着不动）
       console.log(`AI decision for ${currentPlayer.name}: LLM=${decision.actions.length > 0}, actions=${decision.actions.length}, thinking=${decision.thinkingTime}ms, reasoning="${decision.reasoning}"`);
-      const actionsToRun = decision.actions.length > 0
-        ? decision.actions
-        : this.getRuleBasedActions(currentPlayer, gameState.bank, difficulty);
-
-      const reasoning = decision.actions.length > 0
-        ? decision.reasoning
-        : `（规则兜底，${difficulty === 'hard' ? '连锁升级' : difficulty === 'medium' ? '标准阈值' : '2倍阈值'}）`;
+      const actionsToRun = decision.actions;
+      const reasoning = decision.reasoning;
 
       this.io.to(roomId).emit('ai:decision', currentPlayer.id, actionsToRun, reasoning);
 
@@ -668,19 +662,8 @@ export class GameServer {
       await this.handleRollDice(roomId, currentPlayer.id, () => { });
     } catch (error) {
       console.error('AI turn error:', error);
-      // AI出错时也用规则兜底
-      const fallbackActions = this.getRuleBasedActions(currentPlayer, gameState.bank, difficulty);
-      for (const action of fallbackActions) {
-        if (action.type === 'exchange') {
-          const v = GameEngine.validateExchange(currentPlayer, gameState.bank, action);
-          if (v.valid) {
-            GameEngine.executeExchange(currentPlayer, gameState.bank, action);
-            this.io.to(roomId).emit('game:log',
-              `🔄 ${currentPlayer.name} 交换：${action.fromCount}只${animalLabels[action.from]} → ${action.toCount}只${animalLabels[action.to]}`
-            );
-          }
-        }
-      }
+      // AI出错时跳过交换，直接掷骰子
+      this.io.to(roomId).emit('game:log', `⚠️ ${currentPlayer.name} AI决策出错，跳过交换`);
       this.roomManager.updateGameState(roomId, gameState);
       this.io.to(roomId).emit('game:state', gameState);
       await this.handleRollDice(roomId, currentPlayer.id, () => { });
