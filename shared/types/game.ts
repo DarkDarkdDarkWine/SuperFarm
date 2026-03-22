@@ -303,7 +303,8 @@ export interface ServerToClientEvents {
   'game:victory': (winnerId: string) => void;
   'game:finished': (gameState: GameState) => void;
   'ai:thinking': (playerId: string) => void;
-  'ai:decision': (playerId: string, actions: PlayerAction[]) => void;
+  'ai:decision': (playerId: string, actions: PlayerAction[], reasoning: string) => void;
+  'game:log': (text: string) => void;
   'error': (message: string) => void;
 }
 

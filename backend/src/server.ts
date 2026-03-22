@@ -298,6 +298,10 @@ export class GameServer {
     }
 
     // 更新状态
+    const animalLabels: Record<string, string> = { rabbit:'兔子', sheep:'绵羊', pig:'猪', cow:'奶牛', horse:'马' };
+    this.io.to(roomId).emit('game:log',
+      `🔄 ${currentPlayer.name} 交换：${action.fromCount}只${animalLabels[action.from]} → ${action.toCount}只${animalLabels[action.to]}`
+    );
     this.roomManager.updateGameState(roomId, gameState);
     this.io.to(roomId).emit('game:state', gameState);
 
@@ -353,6 +357,9 @@ export class GameServer {
       details: action,
     });
 
+    const dogLabel = action.protection === 'smallDog' ? '小狗🐕（防狐狸）' : '大狗🦮（防狼）';
+    this.io.to(roomId).emit('game:log', `🛡️ ${currentPlayer.name} 购买了${dogLabel}`);
+
     this.roomManager.updateGameState(roomId, gameState);
     this.io.to(roomId).emit('game:state', gameState);
 
@@ -397,13 +404,11 @@ export class GameServer {
       details: { diceResult },
     });
 
+    const diceEmoji: Record<string, string> = { rabbit:'🐰', sheep:'🐑', pig:'🐷', cow:'🐄', horse:'🐴', fox:'🦊', wolf:'🐺' };
     this.io.to(roomId).emit('game:dice_rolled', diceResult);
+    this.io.to(roomId).emit('game:log', `🎲 ${currentPlayer.name} 掷出：${diceResult.map(d => diceEmoji[d]).join(' ')}`);
 
-    // 阶段3: 先处理灾难（规则要求灾难在繁殖之前结算）
-    gameState.phase = 'attacking';
-    await this.processAttacks(roomId, gameState);
-
-    // 阶段4: 再处理繁殖
+    // 阶段3: 先处理繁殖（规则：交换→掷骰子→繁殖→灾难）
     gameState.phase = 'breeding';
     const breedingResults = GameEngine.processBreeding(gameState);
 
@@ -416,6 +421,19 @@ export class GameServer {
     });
 
     this.io.to(roomId).emit('game:breeding', breedingResults);
+
+    const animalLabels: Record<string, string> = { rabbit:'兔子', sheep:'绵羊', pig:'猪', cow:'奶牛', horse:'马' };
+    const breedText = Object.entries(breedingResults)
+      .filter(([, r]) => r.change > 0)
+      .map(([a, r]) => `+${r.change}${animalLabels[a]}(${r.old}→${r.new})`)
+      .join('、');
+    if (breedText) {
+      this.io.to(roomId).emit('game:log', `🌱 ${currentPlayer.name} 繁殖：${breedText}`);
+    }
+
+    // 阶段4: 再处理灾难
+    gameState.phase = 'attacking';
+    await this.processAttacks(roomId, gameState);
 
     // 检查胜利
     gameState.phase = 'victory_check';
@@ -512,6 +530,13 @@ export class GameServer {
           blocked: result.blocked,
           rabbitsLost: result.rabbitsLost,
         });
+        if (result.blocked) {
+          this.io.to(roomId).emit('game:log', `🐕 ${currentPlayer.name} 的小狗赶跑了狐狸！`);
+        } else if (result.rabbitsLost > 0) {
+          this.io.to(roomId).emit('game:log', `🦊 狐狸偷走了 ${currentPlayer.name} 的 ${result.rabbitsLost} 只兔子`);
+        } else {
+          this.io.to(roomId).emit('game:log', `🦊 狐狸来了，${currentPlayer.name} 没有兔子可偷`);
+        }
       } else if (face === 'wolf') {
         // 狼攻击当前玩家
         const result = GameEngine.processWolfAttack(
@@ -541,6 +566,18 @@ export class GameServer {
           blocked: result.blocked,
           animalsLost: result.animalsLost,
         });
+        if (result.blocked) {
+          this.io.to(roomId).emit('game:log', `🦮 ${currentPlayer.name} 的大狗赶跑了狼！`);
+        } else {
+          const animalLabels: Record<string, string> = { sheep:'绵羊', pig:'猪', cow:'奶牛' };
+          const lost = Object.entries(result.animalsLost)
+            .filter(([, n]) => (n as number) > 0)
+            .map(([a, n]) => `${n}只${animalLabels[a]}`)
+            .join('、');
+          this.io.to(roomId).emit('game:log',
+            lost ? `🐺 狼吃掉了 ${currentPlayer.name} 的 ${lost}` : `🐺 狼来了，${currentPlayer.name} 没有动物可吃`
+          );
+        }
       }
     }
   }
@@ -560,6 +597,8 @@ export class GameServer {
     // 通知AI正在思考
     this.io.to(roomId).emit('ai:thinking', currentPlayer.id);
 
+    const animalLabels: Record<string, string> = { rabbit:'兔子', sheep:'绵羊', pig:'猪', cow:'奶牛', horse:'马' };
+
     try {
       // 过滤游戏状态
       const filteredState = this.aiService.filterGameState(gameState, currentPlayer.id);
@@ -573,45 +612,46 @@ export class GameServer {
         difficulty,
       });
 
-      this.io.to(roomId).emit('ai:decision', currentPlayer.id, decision.actions);
+      // 若 LLM 无响应，用规则兜底（保证 AI 不会呆站着不动）
+      const actionsToRun = decision.actions.length > 0
+        ? decision.actions
+        : this.getRuleBasedActions(currentPlayer, gameState.bank, difficulty);
+
+      const reasoning = decision.actions.length > 0
+        ? decision.reasoning
+        : `（规则兜底，${difficulty === 'hard' ? '连锁升级' : difficulty === 'medium' ? '标准阈值' : '2倍阈值'}）`;
+
+      this.io.to(roomId).emit('ai:decision', currentPlayer.id, actionsToRun, reasoning);
 
       // 执行AI的决策
-      for (const action of decision.actions) {
+      let hasAction = false;
+      for (const action of actionsToRun) {
         if (action.type === 'exchange') {
-          const validation = GameEngine.validateExchange(
-            currentPlayer,
-            gameState.bank,
-            action
-          );
-
+          const validation = GameEngine.validateExchange(currentPlayer, gameState.bank, action);
           if (validation.valid) {
             GameEngine.executeExchange(currentPlayer, gameState.bank, action);
-
-            gameState.history.push({
-              type: 'exchange',
-              playerId: currentPlayer.id,
-              timestamp: Date.now(),
-              details: action,
-            });
+            gameState.history.push({ type: 'exchange', playerId: currentPlayer.id, timestamp: Date.now(), details: action });
+            this.io.to(roomId).emit('game:log',
+              `🔄 ${currentPlayer.name} 交换：${action.fromCount}只${animalLabels[action.from]} → ${action.toCount}只${animalLabels[action.to]}`
+            );
+            hasAction = true;
           }
         } else if (action.type === 'buy_protection') {
-          const validation = GameEngine.validateBuyProtection(
-            currentPlayer,
-            gameState.bank,
-            action
-          );
-
+          const validation = GameEngine.validateBuyProtection(currentPlayer, gameState.bank, action);
           if (validation.valid) {
             GameEngine.executeBuyProtection(currentPlayer, gameState.bank, action);
-
-            gameState.history.push({
-              type: 'buy_protection',
-              playerId: currentPlayer.id,
-              timestamp: Date.now(),
-              details: action,
-            });
+            gameState.history.push({ type: 'buy_protection', playerId: currentPlayer.id, timestamp: Date.now(), details: action });
+            const dogLabel = action.protection === 'smallDog' ? '小狗🐕' : '大狗🦮';
+            this.io.to(roomId).emit('game:log', `🛡️ ${currentPlayer.name} 购买了${dogLabel}`);
+            hasAction = true;
           }
         }
+      }
+
+      if (!hasAction) {
+        this.io.to(roomId).emit('game:log', `💭 ${currentPlayer.name} 本回合未交换（${reasoning}）`);
+      } else if (decision.reasoning && decision.actions.length > 0) {
+        this.io.to(roomId).emit('game:log', `💭 ${currentPlayer.name} 的思路：${decision.reasoning}`);
       }
 
       // 更新状态
@@ -620,15 +660,73 @@ export class GameServer {
 
       // AI自动掷骰子
       await new Promise(resolve => setTimeout(resolve, this.aiTurnDelayMs));
-
-      // 掷骰子并继续游戏流程
       await this.handleRollDice(roomId, currentPlayer.id, () => { });
     } catch (error) {
       console.error('AI turn error:', error);
-
-      // AI出错，直接掷骰子
+      // AI出错时也用规则兜底
+      const fallbackActions = this.getRuleBasedActions(currentPlayer, gameState.bank, difficulty);
+      for (const action of fallbackActions) {
+        if (action.type === 'exchange') {
+          const v = GameEngine.validateExchange(currentPlayer, gameState.bank, action);
+          if (v.valid) {
+            GameEngine.executeExchange(currentPlayer, gameState.bank, action);
+            this.io.to(roomId).emit('game:log',
+              `🔄 ${currentPlayer.name} 交换：${action.fromCount}只${animalLabels[action.from]} → ${action.toCount}只${animalLabels[action.to]}`
+            );
+          }
+        }
+      }
+      this.roomManager.updateGameState(roomId, gameState);
+      this.io.to(roomId).emit('game:state', gameState);
       await this.handleRollDice(roomId, currentPlayer.id, () => { });
     }
+  }
+
+  /**
+   * 规则兜底：根据难度生成 AI 交换动作
+   */
+  private getRuleBasedActions(
+    player: import('../../../shared/types/game').PlayerState,
+    bank: import('../../../shared/types/game').Bank,
+    difficulty: import('../../../shared/types/game').AIDifficulty
+  ): import('../../../shared/types/game').PlayerAction[] {
+    const RATES = [
+      { from: 'rabbit' as const, to: 'sheep' as const, fromCount: 6, toCount: 1 },
+      { from: 'sheep' as const, to: 'pig' as const, fromCount: 2, toCount: 1 },
+      { from: 'pig' as const, to: 'cow' as const, fromCount: 3, toCount: 1 },
+      { from: 'cow' as const, to: 'horse' as const, fromCount: 2, toCount: 1 },
+    ];
+    const actions: import('../../../shared/types/game').PlayerAction[] = [];
+    const sim = { ...player.animals };
+    const simBank = { ...bank };
+
+    if (difficulty === 'hard') {
+      // 连锁升级，直到无法继续
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const rate of RATES) {
+          if (sim[rate.from] >= rate.fromCount && simBank[rate.to] >= rate.toCount) {
+            actions.push({ type: 'exchange', ...rate });
+            sim[rate.from] -= rate.fromCount;
+            sim[rate.to] += rate.toCount;
+            simBank[rate.from] += rate.fromCount;
+            simBank[rate.to] -= rate.toCount;
+            changed = true;
+          }
+        }
+      }
+    } else {
+      // easy: 2倍阈值；medium: 标准阈值；各做一次
+      const multiplier = difficulty === 'easy' ? 2 : 1;
+      for (const rate of RATES) {
+        if (sim[rate.from] >= rate.fromCount * multiplier && simBank[rate.to] >= rate.toCount) {
+          actions.push({ type: 'exchange', ...rate });
+          break;
+        }
+      }
+    }
+    return actions;
   }
 
   /**

@@ -279,8 +279,17 @@ export function useSocketGame(configs: PlayerConfig[], mode: GameMode) {
     });
 
     primary.on('game:turn_change', (playerIndex) => {
-      // Optionally add history entry — server state update handles actual change
       void playerIndex;
+    });
+
+    primary.on('game:log', (text) => {
+      dispatchRef.current({ type: 'HISTORY_ADD', text });
+    });
+
+    primary.on('ai:decision', (_playerId, _actions, reasoning) => {
+      if (reasoning && !reasoning.includes('规则兜底')) {
+        dispatchRef.current({ type: 'HISTORY_ADD', text: `💭 ${reasoning}` });
+      }
     });
 
     primary.on('error', (msg) => {
