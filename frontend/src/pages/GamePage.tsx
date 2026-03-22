@@ -26,10 +26,17 @@ const PLAYER_AVATARS = ['🧑‍🌾', '👧', '👦', '🤠'];
 // ── Main component ────────────────────────────────────────────────────────
 
 export default function GamePage({ config, onExit }: { config: GameConfig; onExit: () => void }) {
-  const { state, currentPlayer, farmPlayerIndex, isHumanTurn, canExchange, canBuySmallDog, canBuyBigDog, actions, isConnecting, connectionError } =
+  const { state, currentPlayer, farmPlayerIndex, isHumanTurn, canExchange, canBuySmallDog, canBuyBigDog, actions, isConnecting, connectionError, aiError, clearAiError } =
     useSocketGame(config.players, config.mode);
 
   const [showHistory, setShowHistory] = useState(false);
+
+  // Auto-dismiss AI error toast after 6s
+  useEffect(() => {
+    if (!aiError) return;
+    const t = setTimeout(clearAiError, 6000);
+    return () => clearTimeout(t);
+  }, [aiError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (connectionError) {
     return (
@@ -291,6 +298,29 @@ export default function GamePage({ config, onExit }: { config: GameConfig; onExi
             winnerName={state.winner.name}
             onPlayAgain={onExit}
           />
+        )}
+      </AnimatePresence>
+
+      {/* ── AI error toast ── */}
+      <AnimatePresence>
+        {aiError && (
+          <motion.div
+            key="ai-error-toast"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            onClick={clearAiError}
+            style={{
+              position: 'fixed', top: 64, left: '50%', transform: 'translateX(-50%)',
+              background: '#b71c1c', color: '#fff', borderRadius: 10, padding: '10px 20px',
+              fontFamily: 'var(--font)', fontSize: '0.9rem', zIndex: 9999,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.3)', cursor: 'pointer',
+              maxWidth: '90vw', textAlign: 'center',
+            }}
+          >
+            {aiError}
+            <span style={{ marginLeft: 10, opacity: 0.7, fontSize: '0.8rem' }}>点击关闭</span>
+          </motion.div>
         )}
       </AnimatePresence>
 

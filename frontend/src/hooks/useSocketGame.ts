@@ -38,6 +38,7 @@ type LocalState = {
   history: HistoryEntry[];
   winner: PlayerState | null;
   errorMsg: string | null;
+  aiError: string | null;
 };
 
 type LocalAction =
@@ -49,7 +50,9 @@ type LocalAction =
   | { type: 'DISMISS_EVENT' }
   | { type: 'GAME_FINISHED'; gameState: GameState }
   | { type: 'HISTORY_ADD'; text: string }
-  | { type: 'ERROR'; msg: string };
+  | { type: 'ERROR'; msg: string }
+  | { type: 'AI_ERROR'; msg: string }
+  | { type: 'CLEAR_AI_ERROR' };
 
 const INITIAL_STATE: LocalState = {
   localPhase: 'connecting',
@@ -62,6 +65,7 @@ const INITIAL_STATE: LocalState = {
   history: [],
   winner: null,
   errorMsg: null,
+  aiError: null,
 };
 
 function popQueue(state: LocalState): LocalState {
@@ -168,6 +172,12 @@ function reducer(state: LocalState, action: LocalAction): LocalState {
 
     case 'ERROR':
       return { ...state, errorMsg: action.msg };
+
+    case 'AI_ERROR':
+      return { ...state, aiError: action.msg };
+
+    case 'CLEAR_AI_ERROR':
+      return { ...state, aiError: null };
 
     default:
       return state;
@@ -284,6 +294,9 @@ export function useSocketGame(configs: PlayerConfig[], mode: GameMode) {
 
     primary.on('game:log', (text) => {
       dispatchRef.current({ type: 'HISTORY_ADD', text });
+      if (text.includes('AI决策出错')) {
+        dispatchRef.current({ type: 'AI_ERROR', msg: text });
+      }
     });
 
     primary.on('ai:decision', (_playerId, _actions, reasoning) => {
@@ -464,6 +477,8 @@ export function useSocketGame(configs: PlayerConfig[], mode: GameMode) {
     },
   };
 
+  const clearAiError = () => dispatch({ type: 'CLEAR_AI_ERROR' });
+
   return {
     state,
     currentPlayer,
@@ -475,5 +490,7 @@ export function useSocketGame(configs: PlayerConfig[], mode: GameMode) {
     actions,
     isConnecting: local.localPhase === 'connecting',
     connectionError: local.errorMsg,
+    aiError: local.aiError,
+    clearAiError,
   };
 }
