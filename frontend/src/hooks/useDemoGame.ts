@@ -143,37 +143,33 @@ function processDice(state: State): State {
   const player = players[pi];
   const hasFox = dice.includes('fox');
   const hasWolf = dice.includes('wolf');
-  const history: typeof state.history = [...state.history];
 
-  // === 阶段1：先繁殖（无论有无灾难） ===
+  // ── 阶段1：繁殖（规则要求先于灾难执行）──────────────────────────────
   const diceAnimals: Partial<Record<AnimalType, number>> = {};
   dice.forEach(face => {
     if (face in ANIMAL_LABELS) {
       diceAnimals[face as AnimalType] = (diceAnimals[face as AnimalType] ?? 0) + 1;
     }
   });
-
-  const results: BreedingResults = {};
+  const breedingResults: BreedingResults = {};
   (['rabbit', 'sheep', 'pig', 'cow', 'horse'] as AnimalType[]).forEach(a => {
     const cur = player.animals[a];
     const dc = diceAnimals[a] ?? 0;
     if (dc === 0 || (cur === 0 && dc < 2)) return;
     const gain = Math.min(Math.floor((cur + dc) / 2), bank[a]);
     if (gain > 0) {
-      results[a] = { old: cur, new: cur + gain, change: gain };
+      breedingResults[a] = { old: cur, new: cur + gain, change: gain };
       player.animals[a] = cur + gain;
       bank[a] -= gain;
     }
   });
+  const hasBreeding = Object.keys(breedingResults).length > 0;
+  const breedingHistoryEntry = hasBreeding ? [{
+    text: `🌱 ${player.name} 繁殖了：${Object.entries(breedingResults).map(([a, r]) => `+${r!.change}只${ANIMAL_LABELS[a as AnimalType]}`).join('、')}`,
+    ts: Date.now(),
+  }] : [];
 
-  const hasBreeding = Object.keys(results).length > 0;
-  if (hasBreeding) {
-    const gainsText = Object.entries(results)
-      .map(([a, r]) => `+${r!.change}只${ANIMAL_LABELS[a as AnimalType]}`).join('、');
-    history.push({ text: `🌱 ${player.name} 繁殖了：${gainsText}`, ts: Date.now() });
-  }
-
-  // === 阶段2：灾难（繁殖之后） ===
+  // ── 阶段2：灾难（繁殖之后）───────────────────────────────────────────
   if (hasFox) {
     const blocked = player.protection.smallDog > 0;
     let rabbitsLost = 0;
@@ -185,18 +181,17 @@ function processDice(state: State): State {
       player.animals.rabbit = Math.min(player.animals.rabbit, 1);
       bank.rabbit += rabbitsLost;
     }
-    history.push({
-      text: blocked
-        ? `${player.name} 的小狗🐕 赶跑了狐狸！`
-        : rabbitsLost > 0
-          ? `🦊 狐狸偷走了 ${player.name} 的 ${rabbitsLost} 只兔子！`
-          : `🦊 狐狸来了，但没兔子可偷！`,
-      ts: Date.now(),
-    });
     return {
       ...state, players, bank, phase: 'event',
-      currentEvent: { kind: 'fox', diceResult: dice, blocked, rabbitsLost, breedingBefore: hasBreeding ? results : undefined },
-      history,
+      currentEvent: { kind: 'fox', diceResult: dice, blocked, rabbitsLost, breedingBefore: hasBreeding ? breedingResults : undefined },
+      history: [...state.history, ...breedingHistoryEntry, {
+        text: blocked
+          ? `${player.name} 的小狗🐕 赶跑了狐狸！`
+          : rabbitsLost > 0
+            ? `🦊 狐狸偷走了 ${player.name} 的 ${rabbitsLost} 只兔子！`
+            : `🦊 狐狸来了，但没兔子可偷！`,
+        ts: Date.now(),
+      }],
     };
   }
 
@@ -215,37 +210,33 @@ function processDice(state: State): State {
         }
       });
     }
-    const lostText = Object.entries(animalsLost)
-      .map(([a, n]) => `${n}只${ANIMAL_LABELS[a as AnimalType]}`).join('、');
-    history.push({
-      text: blocked
-        ? `${player.name} 的大狗🦮 赶跑了狼！`
-        : lostText
-          ? `🐺 狼吃掉了 ${player.name} 的 ${lostText}！`
-          : `🐺 狼来了，但没什么可吃的！`,
-      ts: Date.now(),
-    });
+    const lostText = Object.entries(animalsLost).map(([a, n]) => `${n}只${ANIMAL_LABELS[a as AnimalType]}`).join('、');
     return {
       ...state, players, bank, phase: 'event',
-      currentEvent: { kind: 'wolf', diceResult: dice, blocked, animalsLost, breedingBefore: hasBreeding ? results : undefined },
-      history,
+      currentEvent: { kind: 'wolf', diceResult: dice, blocked, animalsLost, breedingBefore: hasBreeding ? breedingResults : undefined },
+      history: [...state.history, ...breedingHistoryEntry, {
+        text: blocked
+          ? `${player.name} 的大狗🦮 赶跑了狼！`
+          : lostText ? `🐺 狼吃掉了 ${player.name} 的 ${lostText}！` : `🐺 狼来了，但没什么可吃的！`,
+        ts: Date.now(),
+      }],
     };
   }
 
-  // 无灾难
+  // ── 无灾难 ────────────────────────────────────────────────────────────
   if (!hasBreeding) {
     const diceText = dice.map(d => DICE_EMOJI[d]).join(' ');
     return advanceTurn({
       ...state, players, bank,
       pendingDice: dice,
-      history: [...history, { text: `${player.name} 掷出 ${diceText}，没有收获`, ts: Date.now() }],
+      history: [...state.history, { text: `${player.name} 掷出 ${diceText}，没有收获`, ts: Date.now() }],
     });
   }
 
   return {
     ...state, players, bank, phase: 'event',
-    currentEvent: { kind: 'breeding', diceResult: dice, results },
-    history,
+    currentEvent: { kind: 'breeding', diceResult: dice, results: breedingResults },
+    history: [...state.history, ...breedingHistoryEntry],
   };
 }
 
