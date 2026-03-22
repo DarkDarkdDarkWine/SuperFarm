@@ -83,6 +83,13 @@ export const UPGRADE_RATES = [
   { from: 'cow' as AnimalType, to: 'horse' as AnimalType, fromCount: 2, toCount: 1 },
 ] as const;
 
+export const DOWNGRADE_RATES = [
+  { from: 'sheep' as AnimalType, to: 'rabbit' as AnimalType, fromCount: 1, toCount: 6 },
+  { from: 'pig' as AnimalType, to: 'sheep' as AnimalType, fromCount: 1, toCount: 2 },
+  { from: 'cow' as AnimalType, to: 'pig' as AnimalType, fromCount: 1, toCount: 3 },
+  { from: 'horse' as AnimalType, to: 'cow' as AnimalType, fromCount: 1, toCount: 2 },
+] as const;
+
 const ALL_RATES = [
   ...UPGRADE_RATES,
   { from: 'sheep' as AnimalType, to: 'rabbit' as AnimalType, fromCount: 1, toCount: 6 },

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSocketGame } from '../hooks/useSocketGame';
-import { ANIMAL_LABELS, DICE_EMOJI, UPGRADE_RATES } from '../hooks/useDemoGame';
+import { ANIMAL_LABELS, DICE_EMOJI, UPGRADE_RATES, DOWNGRADE_RATES } from '../hooks/useDemoGame';
 import type { GameEvent, HistoryEntry } from '../hooks/useDemoGame';
 import type { GameConfig } from '../App';
 import type { AnimalType } from '@shared/types/game';
@@ -204,7 +204,7 @@ export default function GamePage({ config, onExit }: { config: GameConfig; onExi
 
       {/* ── Action panel ── */}
       <div className="gp-actions">
-        {/* Exchange */}
+        {/* Exchange - upgrade */}
         <div className="action-row exchange-row">
           {UPGRADE_RATES.map(rate => {
             const ok = canExchange(rate.from, rate.to);
@@ -212,6 +212,24 @@ export default function GamePage({ config, onExit }: { config: GameConfig; onExi
               <button
                 key={`${rate.from}-${rate.to}`}
                 className={`exch-btn ${ok ? 'ok' : 'off'}`}
+                disabled={!ok}
+                onClick={() => actions.exchange(rate.from, rate.to)}
+              >
+                {ANIMAL_STYLE[rate.from].emoji}{rate.fromCount}
+                <span className="exch-arrow">→</span>
+                {ANIMAL_STYLE[rate.to].emoji}{rate.toCount}
+              </button>
+            );
+          })}
+        </div>
+        {/* Exchange - downgrade */}
+        <div className="action-row exchange-row exchange-row-down">
+          {DOWNGRADE_RATES.map(rate => {
+            const ok = canExchange(rate.from, rate.to);
+            return (
+              <button
+                key={`${rate.from}-${rate.to}`}
+                className={`exch-btn down ${ok ? 'ok' : 'off'}`}
                 disabled={!ok}
                 onClick={() => actions.exchange(rate.from, rate.to)}
               >
@@ -231,7 +249,7 @@ export default function GamePage({ config, onExit }: { config: GameConfig; onExi
             onClick={actions.buySmallDog}
           >
             🐕 买小狗
-            <span className="guard-cost">花1只兔子</span>
+            <span className="guard-cost">花1只绵羊</span>
           </button>
           <button
             className={`guard-btn ${canBuyBigDog ? 'ok' : 'off'}`}
@@ -239,7 +257,7 @@ export default function GamePage({ config, onExit }: { config: GameConfig; onExi
             onClick={actions.buyBigDog}
           >
             🦮 买大狗
-            <span className="guard-cost">花1只绵羊</span>
+            <span className="guard-cost">花1只牛</span>
           </button>
         </div>
 

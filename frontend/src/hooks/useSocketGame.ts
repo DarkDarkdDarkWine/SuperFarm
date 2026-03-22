@@ -400,9 +400,9 @@ export function useSocketGame(configs: PlayerConfig[], mode: GameMode) {
   };
 
   const canBuySmallDog =
-    isHumanTurn && !!ss && currentPlayer.animals.rabbit >= 1 && ss.bank.smallDog > 0;
+    isHumanTurn && !!ss && currentPlayer.animals.sheep >= 1 && ss.bank.smallDog > 0;
   const canBuyBigDog =
-    isHumanTurn && !!ss && currentPlayer.animals.sheep >= 1 && ss.bank.bigDog > 0;
+    isHumanTurn && !!ss && currentPlayer.animals.cow >= 1 && ss.bank.bigDog > 0;
 
   // Map to the same state shape GamePage expects
   const state = {

@@ -882,6 +882,15 @@ input, select { font-family: inherit; }
   cursor: not-allowed;
 }
 
+/* Downgrade exchange row — muted orange tint */
+.exchange-row-down { margin-top: 4px; }
+.exch-btn.down.ok {
+  background: #FFF8E1;
+  border-color: #FFA726;
+  color: #E65100;
+}
+.exch-btn.down.ok:hover { background: #FFE0B2; transform: translateY(-2px); box-shadow: 0 3px 10px rgba(255,152,0,0.22); }
+
 /* Guard buttons */
 .guard-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 

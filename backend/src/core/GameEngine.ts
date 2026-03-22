@@ -271,8 +271,8 @@ export class GameEngine {
         return;
       }
 
-      // 有种才能繁殖：没有该动物无法繁殖
-      if (currentCount === 0) {
+      // 有种才能繁殖；双同骰子（diceCount≥2）例外——0只也可获得1只
+      if (currentCount === 0 && diceCount < 2) {
         results[animal] = { old: currentCount, new: currentCount, change: 0 };
         return;
       }
@@ -297,40 +297,18 @@ export class GameEngine {
     attacker: PlayerState,
     victim: PlayerState,
     bank: Bank,
-    mode: GameMode
+    _mode: GameMode
   ): { blocked: boolean; rabbitsLost: number } {
-    // 小狗优先防狐狸
+    // 仅小狗可防御狐狸（大狗只防狼）
     if (victim.protection.smallDog > 0) {
       victim.protection.smallDog -= 1;
       bank.smallDog += 1;
       return { blocked: true, rabbitsLost: 0 };
     }
 
-    // 大狗也能防狐狸（优先保留大狗对抗狼，但没小狗时用大狗）
-    if (victim.protection.bigDog > 0) {
-      victim.protection.bigDog -= 1;
-      bank.bigDog += 1;
-      return { blocked: true, rabbitsLost: 0 };
-    }
-
-    // 根据模式处理攻击
-    let rabbitsLost: number;
-
-    if (mode === 'classic') {
-      // 经典模式：清空所有兔子
-      rabbitsLost = victim.animals.rabbit;
-      victim.animals.rabbit = 0;
-    } else {
-      // 休闲模式：减少5只，最少保留1只
-      if (victim.animals.rabbit <= 1) {
-        rabbitsLost = 0;
-      } else {
-        rabbitsLost = Math.min(victim.animals.rabbit - 1, 5);
-        victim.animals.rabbit = Math.max(1, victim.animals.rabbit - 5);
-      }
-    }
-
-    // 归还银行
+    // 狐狸攻击：兔子减到只剩1只
+    const rabbitsLost = Math.max(0, victim.animals.rabbit - 1);
+    victim.animals.rabbit = Math.min(victim.animals.rabbit, 1);
     bank.rabbit += rabbitsLost;
 
     return { blocked: false, rabbitsLost };
