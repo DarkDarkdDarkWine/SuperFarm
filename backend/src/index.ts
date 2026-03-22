@@ -9,12 +9,7 @@ import { createExpressApp } from './app';
 
 dotenv.config();
 
-const apiKey = process.env.DEEPSEEK_API_KEY;
-
-if (!apiKey) {
-  console.warn('⚠️  DEEPSEEK_API_KEY not found in environment variables');
-  console.warn('⚠️  AI players will not work without API key');
-}
+const apiKey = process.env.DEEPSEEK_API_KEY ?? '';
 
 // 先创建裸 HTTP server，让 GameServer 挂载 Socket.io
 const httpServer = createServer();
@@ -33,7 +28,7 @@ httpServer.listen(PORT, () => {
   console.log('🎮 SuperFarm Game Server');
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`✅ Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
-  console.log(`✅ AI Service: ${apiKey ? 'Enabled' : 'Disabled (no API key)'}`);
+  console.log('✅ AI Service: Ready (API key set via settings page)');
 });
 
 process.on('SIGTERM', () => {

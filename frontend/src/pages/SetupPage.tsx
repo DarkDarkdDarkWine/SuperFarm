@@ -68,9 +68,10 @@ function useStatusPing() {
   useEffect(() => {
     // 页面加载时把 localStorage 里的 key 自动恢复到后端（容器重启后内存丢失）
     const savedKey = localStorage.getItem('ai_api_key')?.trim();
-    const savedProvider = localStorage.getItem('ai_provider') ?? 'deepseek';
-    const savedModel = localStorage.getItem('ai_model')?.trim();
-    if (savedKey && savedModel) {
+    if (savedKey) {
+      const savedProvider = localStorage.getItem('ai_provider') ?? 'deepseek';
+      const defaultModels: Record<string, string> = { deepseek: 'deepseek-chat', minimax: 'MiniMax-M2.5', zhipu: 'glm-4-flash-250414' };
+      const savedModel = localStorage.getItem('ai_model')?.trim() || defaultModels[savedProvider] || 'deepseek-chat';
       fetch(`${BACKEND_URL}/api/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
