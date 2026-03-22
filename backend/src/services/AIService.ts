@@ -303,6 +303,10 @@ ${gameStateDesc}
   ): Promise<Record<string, unknown>> {
     const temperature = this.getTemperature(difficulty);
 
+    if (!this.apiKey) {
+      throw new Error('AI API key is not configured');
+    }
+
     const response = await fetch(`${PROVIDER_CONFIGS[this.provider].baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -318,7 +322,7 @@ ${gameStateDesc}
           },
         ],
         temperature,
-        max_tokens: 1000,
+        max_tokens: 2000,
       }),
     });
 
@@ -339,12 +343,18 @@ ${gameStateDesc}
       throw new Error('DeepSeek API returned an empty response');
     }
 
-    // 尝试解析JSON
+    // 尝试解析JSON（多种格式兼容）
     try {
-      // 提取JSON代码块
-      const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/);
+      // 提取JSON代码块（允许行尾空白/CRLF/多余内容）
+      const jsonMatch = content.match(/```(?:json)?\s*\r?\n([\s\S]*?)\r?\n\s*```/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[1]);
+        return JSON.parse(jsonMatch[1].trim());
+      }
+
+      // 尝试提取第一个 {...} 块
+      const braceMatch = content.match(/\{[\s\S]*\}/);
+      if (braceMatch) {
+        return JSON.parse(braceMatch[0]);
       }
 
       // 直接解析
