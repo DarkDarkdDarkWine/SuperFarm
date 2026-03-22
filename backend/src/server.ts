@@ -10,6 +10,9 @@ import { AIService } from './services/AIService';
 import type { AIProvider } from './services/AIService';
 import type {
   GameState,
+  PlayerState,
+  Bank,
+  PlayerAction,
   RoomConfig,
   AIDifficulty,
   ExchangeAction,
@@ -686,17 +689,17 @@ export class GameServer {
    * 规则兜底：根据难度生成 AI 交换动作
    */
   private getRuleBasedActions(
-    player: import('../../../shared/types/game').PlayerState,
-    bank: import('../../../shared/types/game').Bank,
-    difficulty: import('../../../shared/types/game').AIDifficulty
-  ): import('../../../shared/types/game').PlayerAction[] {
+    player: PlayerState,
+    bank: Bank,
+    difficulty: AIDifficulty
+  ): PlayerAction[] {
     const RATES = [
       { from: 'rabbit' as const, to: 'sheep' as const, fromCount: 6, toCount: 1 },
       { from: 'sheep' as const, to: 'pig' as const, fromCount: 2, toCount: 1 },
       { from: 'pig' as const, to: 'cow' as const, fromCount: 3, toCount: 1 },
       { from: 'cow' as const, to: 'horse' as const, fromCount: 2, toCount: 1 },
     ];
-    const actions: import('../../../shared/types/game').PlayerAction[] = [];
+    const actions: PlayerAction[] = [];
     const sim = { ...player.animals };
     const simBank = { ...bank };
 
