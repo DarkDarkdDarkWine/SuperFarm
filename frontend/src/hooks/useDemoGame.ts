@@ -12,22 +12,21 @@ import type { PlayerConfig } from '../App';
 // Inlined from GAME_CONSTANTS to avoid rollup resolution issues with as-const re-exports
 const DICE_A: DiceResult[] = [
   'rabbit', 'rabbit', 'rabbit', 'rabbit', 'rabbit', 'rabbit',
-  'sheep', 'sheep',
-  'pig', 'pig',
-  'horse',
+  'sheep', 'sheep', 'sheep',
+  'pig',
+  'cow',
   'fox',
 ];
 const DICE_B: DiceResult[] = [
   'rabbit', 'rabbit', 'rabbit', 'rabbit', 'rabbit', 'rabbit',
   'sheep', 'sheep', 'sheep',
   'pig',
-  'cow',
+  'horse',
   'wolf',
 ];
 const INITIAL_ANIMALS: Record<GameMode, Record<AnimalType, number>> = {
   classic: { rabbit: 1, sheep: 0, pig: 0, cow: 0, horse: 0 },
   casual:  { rabbit: 2, sheep: 0, pig: 0, cow: 0, horse: 0 },
-  hard:    { rabbit: 1, sheep: 0, pig: 0, cow: 0, horse: 0 },
 };
 const INITIAL_BANK: Bank = {
   rabbit: 60, sheep: 24, pig: 20, cow: 12, horse: 6, smallDog: 4, bigDog: 2,
@@ -152,13 +151,8 @@ function processDice(state: State): State {
       player.protection.smallDog -= 1;
       bank.smallDog += 1;
     } else {
-      if (state.mode === 'casual') {
-        rabbitsLost = Math.min(Math.max(0, player.animals.rabbit - 1), 5);
-        player.animals.rabbit = Math.max(1, player.animals.rabbit - 5);
-      } else {
-        rabbitsLost = player.animals.rabbit;
-        player.animals.rabbit = 0;
-      }
+      rabbitsLost = Math.max(0, player.animals.rabbit - 1);
+      player.animals.rabbit = Math.min(player.animals.rabbit, 1);
       bank.rabbit += rabbitsLost;
     }
     return {
@@ -182,7 +176,7 @@ function processDice(state: State): State {
       player.protection.bigDog -= 1;
       bank.bigDog += 1;
     } else {
-      (['sheep', 'pig', 'cow'] as AnimalType[]).forEach(a => {
+      (['rabbit', 'sheep', 'pig', 'cow'] as AnimalType[]).forEach(a => {
         if (player.animals[a] > 0) {
           animalsLost[a] = player.animals[a];
           bank[a] += player.animals[a];
@@ -288,30 +282,30 @@ function reducer(state: State, action: Action): State {
 
     case 'BUY_SMALL_DOG': {
       if (state.phase !== 'exchange') return state;
-      if (player.animals.rabbit < 1 || state.bank.smallDog < 1) return state;
+      if (player.animals.sheep < 1 || state.bank.smallDog < 1) return state;
       const players = state.players.map((p, i) => i !== pi ? p : {
         ...p,
-        animals: { ...p.animals, rabbit: p.animals.rabbit - 1 },
+        animals: { ...p.animals, sheep: p.animals.sheep - 1 },
         protection: { ...p.protection, smallDog: p.protection.smallDog + 1 },
       });
       return {
         ...state, players,
-        bank: { ...state.bank, rabbit: state.bank.rabbit + 1, smallDog: state.bank.smallDog - 1 },
+        bank: { ...state.bank, sheep: state.bank.sheep + 1, smallDog: state.bank.smallDog - 1 },
         history: [...state.history, { text: `${player.name} 买了一只小狗🐕`, ts: Date.now() }],
       };
     }
 
     case 'BUY_BIG_DOG': {
       if (state.phase !== 'exchange') return state;
-      if (player.animals.sheep < 1 || state.bank.bigDog < 1) return state;
+      if (player.animals.cow < 1 || state.bank.bigDog < 1) return state;
       const players = state.players.map((p, i) => i !== pi ? p : {
         ...p,
-        animals: { ...p.animals, sheep: p.animals.sheep - 1 },
+        animals: { ...p.animals, cow: p.animals.cow - 1 },
         protection: { ...p.protection, bigDog: p.protection.bigDog + 1 },
       });
       return {
         ...state, players,
-        bank: { ...state.bank, sheep: state.bank.sheep + 1, bigDog: state.bank.bigDog - 1 },
+        bank: { ...state.bank, cow: state.bank.cow + 1, bigDog: state.bank.bigDog - 1 },
         history: [...state.history, { text: `${player.name} 买了一只大狗🦮`, ts: Date.now() }],
       };
     }
@@ -439,8 +433,8 @@ export function useDemoGame(configs: PlayerConfig[], mode: GameMode) {
     currentPlayer,
     isHumanTurn,
     canExchange,
-    canBuySmallDog: isHumanTurn && currentPlayer.animals.rabbit >= 1 && state.bank.smallDog > 0,
-    canBuyBigDog: isHumanTurn && currentPlayer.animals.sheep >= 1 && state.bank.bigDog > 0,
+    canBuySmallDog: isHumanTurn && currentPlayer.animals.sheep >= 1 && state.bank.smallDog > 0,
+    canBuyBigDog: isHumanTurn && currentPlayer.animals.cow >= 1 && state.bank.bigDog > 0,
     actions: {
       exchange: (from: AnimalType, to: AnimalType) => dispatch({ type: 'EXCHANGE', from, to }),
       buySmallDog: () => dispatch({ type: 'BUY_SMALL_DOG' }),

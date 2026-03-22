@@ -47,12 +47,21 @@ describe('GameRules', () => {
       expect(GameRules.calculateBreeding(2, 1)).toBe(1) // (2+1)/2 = 1
       expect(GameRules.calculateBreeding(3, 2)).toBe(2) // (3+2)/2 = 2
       expect(GameRules.calculateBreeding(1, 1)).toBe(1) // (1+1)/2 = 1
-      expect(GameRules.calculateBreeding(0, 1)).toBe(0) // (0+1)/2 = 0
+      expect(GameRules.calculateBreeding(0, 1)).toBe(0) // 单骰，有种才能繁殖
     })
 
     it('应该向下取整', () => {
       expect(GameRules.calculateBreeding(2, 2)).toBe(2) // (2+2)/2 = 2
       expect(GameRules.calculateBreeding(1, 2)).toBe(1) // (1+2)/2 = 1 (向下取整)
+    })
+
+    it('双同骰子时，0只动物也应获得1只', () => {
+      // 两颗骰子均掷出同一种动物（diceCount=2），即使玩家持有0只也可繁殖
+      expect(GameRules.calculateBreeding(0, 2)).toBe(1) // floor((0+2)/2) = 1
+    })
+
+    it('单骰时，0只动物不应获得任何动物', () => {
+      expect(GameRules.calculateBreeding(0, 1)).toBe(0) // floor((0+1)/2) = 0
     })
   })
 
@@ -77,6 +86,28 @@ describe('GameRules', () => {
       expect(result).toBe(true) // 攻击成功
       expect(mockPlayer.animals.rabbit).toBe(1) // 兔子只剩1只
       expect(mockPlayer.protection.smallDog).toBe(0) // 小狗数量未变
+    })
+
+    it('有大狗但无小狗时，大狗不能防御狐狸，兔子仍减至1只', () => {
+      mockPlayer.protection.smallDog = 0
+      mockPlayer.protection.bigDog = 1
+      mockPlayer.animals.rabbit = 10
+
+      const result = GameRules.processFoxAttack(mockPlayer)
+
+      expect(result).toBe(true) // 攻击未被阻挡
+      expect(mockPlayer.animals.rabbit).toBe(1) // 兔子减至1只
+      expect(mockPlayer.protection.bigDog).toBe(1) // 大狗未被消耗
+    })
+
+    it('兔子只有1只时狐狸攻击不做任何改变', () => {
+      mockPlayer.protection.smallDog = 0
+      mockPlayer.animals.rabbit = 1
+
+      const result = GameRules.processFoxAttack(mockPlayer)
+
+      expect(result).toBe(true)
+      expect(mockPlayer.animals.rabbit).toBe(1) // 保持1只，无变化
     })
   })
 
@@ -248,15 +279,22 @@ describe('GameRules', () => {
       expect(GameRules.validateProtectionPurchase(mockPlayer, 'smallDog')).toBe(false)
     })
 
-    it('应该允许购买大狗当有足够的猪', () => {
-      mockPlayer.animals.pig = 1
+    it('应该允许购买大狗当有足够的牛', () => {
+      mockPlayer.animals.cow = 1
       mockPlayer.protection.bigDog = 0
 
       expect(GameRules.validateProtectionPurchase(mockPlayer, 'bigDog')).toBe(true)
     })
 
+    it('应该拒绝购买大狗当牛不足', () => {
+      mockPlayer.animals.cow = 0
+      mockPlayer.protection.bigDog = 0
+
+      expect(GameRules.validateProtectionPurchase(mockPlayer, 'bigDog')).toBe(false)
+    })
+
     it('应该拒绝购买大狗当已达到上限', () => {
-      mockPlayer.animals.pig = 1
+      mockPlayer.animals.cow = 1
       mockPlayer.protection.bigDog = 1 // 已达到上限
 
       expect(GameRules.validateProtectionPurchase(mockPlayer, 'bigDog')).toBe(false)
@@ -276,13 +314,13 @@ describe('GameRules', () => {
     })
 
     it('应该正确购买大狗', () => {
-      mockPlayer.animals.pig = 2
+      mockPlayer.animals.cow = 2
       mockPlayer.protection.bigDog = 0
 
       const result = GameRules.buyProtection(mockPlayer, 'bigDog')
 
       expect(result).toBe(true)
-      expect(mockPlayer.animals.pig).toBe(1) // 消耗了1只猪
+      expect(mockPlayer.animals.cow).toBe(1) // 消耗了1只牛
       expect(mockPlayer.protection.bigDog).toBe(1) // 获得了1只大狗
     })
 

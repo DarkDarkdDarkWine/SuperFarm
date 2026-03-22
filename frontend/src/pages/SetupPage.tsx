@@ -11,7 +11,6 @@ const SLOT_AVATARS = ['🧑‍🌾', '👧', '👦', '🤠'];
 const MODES: Array<{ id: GameMode; emoji: string; title: string; desc: string; color: string }> = [
   { id: 'classic', emoji: '🐰', title: '经典模式', desc: '从1只兔子开始，还原经典玩法', color: '#E8F5E9' },
   { id: 'casual', emoji: '🌈', title: '欢乐模式', desc: '不会被狐狸偷光，更适合小朋友', color: '#FFF3E0' },
-  { id: 'hard', emoji: '⚡', title: '挑战模式', desc: '狐狸狼更凶猛，适合高手', color: '#FCE4EC' },
 ];
 
 const AI_NAME_POOL = [

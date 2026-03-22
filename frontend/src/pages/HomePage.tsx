@@ -26,7 +26,6 @@ const animalMeta: Record<AnimalType, { icon: string; label: string }> = {
 const modeCopy: Record<GameMode, { title: string; detail: string }> = {
   classic: { title: '经典农场', detail: '最适合第一次开始玩。' },
   casual: { title: '欢乐丰收', detail: '节奏更轻快，玩起来更放松。' },
-  hard: { title: '勇气挑战', detail: '更刺激，适合进阶玩家。' },
 };
 
 type DemoStage = 'lobby' | 'room' | 'game';
@@ -166,7 +165,7 @@ function HeroCard({ mode, setMode, onCreate, onJoin }: { mode: GameMode; setMode
           和小伙伴们一起经营农场，收集动物，躲避狐狸和狼的攻击！
         </p>
         <div className="hero-modes">
-          {(['classic', 'casual', 'hard'] as GameMode[]).map(option => (
+          {(['classic', 'casual'] as GameMode[]).map(option => (
             <button key={option} type="button" className={`mode-chip ${mode === option ? 'is-selected' : ''}`} onClick={() => setMode(option)}>
               <strong>{modeCopy[option].title}</strong>
               <span>{modeCopy[option].detail}</span>
