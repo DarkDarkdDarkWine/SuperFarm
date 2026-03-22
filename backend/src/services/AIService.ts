@@ -343,6 +343,9 @@ ${gameStateDesc}
       throw new Error('DeepSeek API returned an empty response');
     }
 
+    // 打印原始响应供调试
+    console.log(`[AI raw response] ${content.slice(0, 300)}`);
+
     // 尝试解析JSON（多种格式兼容）
     try {
       // 提取JSON代码块（允许行尾空白/CRLF/多余内容）

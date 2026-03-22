@@ -617,7 +617,7 @@ export class GameServer {
       });
 
       // 若 LLM 无响应，用规则兜底（保证 AI 不会呆站着不动）
-      console.log(`AI decision for ${currentPlayer.name}: LLM=${decision.actions.length > 0}, actions=${decision.actions.length}, thinking=${decision.thinkingTime}ms`);
+      console.log(`AI decision for ${currentPlayer.name}: LLM=${decision.actions.length > 0}, actions=${decision.actions.length}, thinking=${decision.thinkingTime}ms, reasoning="${decision.reasoning}"`);
       const actionsToRun = decision.actions.length > 0
         ? decision.actions
         : this.getRuleBasedActions(currentPlayer, gameState.bank, difficulty);
