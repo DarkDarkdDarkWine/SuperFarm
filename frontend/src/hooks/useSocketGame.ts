@@ -20,12 +20,21 @@ type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 type LocalPhase = 'connecting' | 'exchange' | 'rolling' | 'event' | 'finished';
 
+// One complete turn's display data: the dice roll + all resulting events
+type TurnEntry = {
+  dice: DiceResult[];
+  playerIndex: number;
+  events: GameEvent[];
+};
+
 type LocalState = {
   localPhase: LocalPhase;
   serverState: GameState | null;
   pendingDice: DiceResult[] | null;
   currentEvent: GameEvent | null;
-  eventQueue: GameEvent[];
+  eventQueue: GameEvent[];      // events for the currently-displayed dice roll
+  pendingTurns: TurnEntry[];   // future turns buffered while current turn plays out
+  displayingPlayerIndex: number; // whose farm to show during rolling/event
   history: HistoryEntry[];
   winner: PlayerState | null;
   errorMsg: string | null;
@@ -33,7 +42,7 @@ type LocalState = {
 
 type LocalAction =
   | { type: 'GAME_STARTED'; gameState: GameState }
-  | { type: 'DICE_ROLLED'; dice: DiceResult[] }
+  | { type: 'DICE_ROLLED'; dice: DiceResult[]; playerIndex: number }
   | { type: 'QUEUE_EVENT'; event: GameEvent }
   | { type: 'SERVER_STATE'; gameState: GameState }
   | { type: 'ANIMATION_DONE' }
@@ -48,21 +57,38 @@ const INITIAL_STATE: LocalState = {
   pendingDice: null,
   currentEvent: null,
   eventQueue: [],
+  pendingTurns: [],
+  displayingPlayerIndex: 0,
   history: [],
   winner: null,
   errorMsg: null,
 };
 
 function popQueue(state: LocalState): LocalState {
-  if (state.eventQueue.length === 0) {
-    return { ...state, localPhase: 'exchange', currentEvent: null };
+  // Still events to show for the current dice roll
+  if (state.eventQueue.length > 0) {
+    return {
+      ...state,
+      localPhase: 'event',
+      currentEvent: state.eventQueue[0],
+      eventQueue: state.eventQueue.slice(1),
+    };
   }
-  return {
-    ...state,
-    localPhase: 'event',
-    currentEvent: state.eventQueue[0],
-    eventQueue: state.eventQueue.slice(1),
-  };
+  // Current turn fully done — start next buffered turn if any
+  if (state.pendingTurns.length > 0) {
+    const [next, ...rest] = state.pendingTurns;
+    return {
+      ...state,
+      localPhase: 'rolling',
+      pendingDice: next.dice,
+      currentEvent: null,
+      eventQueue: next.events,
+      pendingTurns: rest,
+      displayingPlayerIndex: next.playerIndex,
+    };
+  }
+  // All turns done
+  return { ...state, localPhase: 'exchange', currentEvent: null };
 }
 
 function reducer(state: LocalState, action: LocalAction): LocalState {
@@ -75,16 +101,41 @@ function reducer(state: LocalState, action: LocalAction): LocalState {
         history: [{ text: '🌱 游戏开始！集齐5种动物就能赢！', ts: Date.now() }],
       };
 
-    case 'DICE_ROLLED':
+    case 'DICE_ROLLED': {
+      if (state.localPhase === 'exchange') {
+        // Idle — start this turn immediately
+        return {
+          ...state,
+          localPhase: 'rolling',
+          pendingDice: action.dice,
+          eventQueue: [],
+          pendingTurns: [],
+          displayingPlayerIndex: action.playerIndex,
+        };
+      }
+      // Currently busy (rolling/event) — buffer this turn
       return {
         ...state,
-        localPhase: 'rolling',
-        pendingDice: action.dice,
-        eventQueue: [],
+        pendingTurns: [
+          ...state.pendingTurns,
+          { dice: action.dice, playerIndex: action.playerIndex, events: [] },
+        ],
       };
+    }
 
-    case 'QUEUE_EVENT':
+    case 'QUEUE_EVENT': {
+      if (state.pendingTurns.length > 0) {
+        // Append to the most recently buffered turn
+        const turns = [...state.pendingTurns];
+        turns[turns.length - 1] = {
+          ...turns[turns.length - 1],
+          events: [...turns[turns.length - 1].events, action.event],
+        };
+        return { ...state, pendingTurns: turns };
+      }
+      // Belongs to the current active turn
       return { ...state, eventQueue: [...state.eventQueue, action.event] };
+    }
 
     case 'SERVER_STATE':
       return { ...state, serverState: action.gameState };
@@ -103,6 +154,7 @@ function reducer(state: LocalState, action: LocalAction): LocalState {
         serverState: action.gameState,
         currentEvent: null,
         eventQueue: [],
+        pendingTurns: [],
         winner,
         history: [
           ...state.history,
@@ -152,8 +204,6 @@ export function useSocketGame(configs: PlayerConfig[], mode: GameMode) {
   const socketMapRef = useRef<Map<string, TypedSocket>>(new Map());
   const roomIdRef = useRef<string | null>(null);
   const lastDiceRef = useRef<DiceResult[]>([]);
-  // Freeze the displayed farm player during rolling/event phases
-  const rollingPlayerIndexRef = useRef<number>(0);
   const serverStateRef = useRef(local.serverState);
   serverStateRef.current = local.serverState;
 
@@ -182,9 +232,8 @@ export function useSocketGame(configs: PlayerConfig[], mode: GameMode) {
 
     primary.on('game:dice_rolled', (dice) => {
       lastDiceRef.current = dice;
-      // Capture who is rolling BEFORE game:state arrives with next player's index
-      rollingPlayerIndexRef.current = serverStateRef.current?.currentPlayerIndex ?? 0;
-      dispatchRef.current({ type: 'DICE_ROLLED', dice });
+      const playerIndex = serverStateRef.current?.currentPlayerIndex ?? 0;
+      dispatchRef.current({ type: 'DICE_ROLLED', dice, playerIndex });
     });
 
     primary.on('game:breeding', (results) => {
@@ -331,7 +380,7 @@ export function useSocketGame(configs: PlayerConfig[], mode: GameMode) {
   // During rolling/event, show the player who rolled — not the next player
   const farmPlayerIndex =
     (local.localPhase === 'rolling' || local.localPhase === 'event')
-      ? rollingPlayerIndexRef.current
+      ? local.displayingPlayerIndex
       : (ss?.currentPlayerIndex ?? 0);
 
   // Find which socket to use: current player's id is their socket.id
